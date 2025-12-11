@@ -4,3 +4,4 @@ yt-dlp
 deep-translator
 aiohttp
 requests
+gallery-dl
