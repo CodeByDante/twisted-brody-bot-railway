@@ -274,7 +274,8 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
 
             # Twitter Fix
             if "twitter.com" in url_descarga or "x.com" in url_descarga:
-                 opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
+                 # Usamos el MISMO User-Agent que en la extracción (Desktop) para no invalidar cookies.
+                 opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
             loop = asyncio.get_running_loop()
             with yt_dlp.YoutubeDL(opts) as ydl:
