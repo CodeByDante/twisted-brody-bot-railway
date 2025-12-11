@@ -32,3 +32,6 @@ t_*
 descargas.json
 hashtags.json
 mi_bot_pro.session
+
+# Binaries
+*.exe
