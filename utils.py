@@ -107,9 +107,7 @@ def descargar_galeria(url, cookie_file=None):
     if cookie_file:
         cmd.extend(["--cookies", cookie_file])
         
-    # FIX: Gallery-DL v1.26 no soporta x.com nativamente, forzamos twitter.com
-    url_fixed = url.replace("x.com", "twitter.com")
-    cmd.append(url_fixed)
+    cmd.append(url)
     
     print(f"📸 Ejecutando Gallery-DL ({cookie_file}): {' '.join(cmd)}")
     

@@ -683,7 +683,7 @@ async def analyze(c, m):
         
         # Twitter/X Fix: Usar UA de Desktop para coincidir con las cookies
         if "twitter.com" in target_url or "x.com" in target_url:
-            opts['http_headers'] = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            opts['http_headers'] = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'}
 
         if "eporner" in target_url: opts['nocheckcertificate'] = True
         
