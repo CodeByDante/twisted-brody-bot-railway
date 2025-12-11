@@ -89,9 +89,9 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             if d['status'] == 'finished' or (now - last_edit) > 4:
                 last_edit = now
                 
-                # Extraer datos de YT-DLP / Aria2
+                # Extraer datos de YT-DLP / Fast
                 percent = d.get('_percent_str', '0%').strip()
-                # Limpiar caracteres ANSI si Aria2 los mete
+                # Limpiar caracteres ANSI si Fast los mete
                 percent = re.sub(r'\x1b\[[0-9;]*m', '', percent)
                 
                 speed = d.get('_speed_str', 'N/A').strip()
@@ -214,8 +214,8 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
              # Ejecutar
              process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
              
-             # Loop simple de progreso (leyendo stdout de aria2 es complejo, mejor solo esperar o leer chunks)
-             # Aria2 interactive output no se lleva bien con PIPE.
+             # Loop simple de progreso (leyendo stdout de fast es complejo, mejor solo esperar o leer chunks)
+             # Fast interactive output no se lleva bien con PIPE.
              # Usaremos un timer simple para actualizar status "sigue vivo"
              
              start_t = time.time()
@@ -283,7 +283,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
 
                 except Exception as e:
                     # FIX: WinError 32 (El archivo está siendo usado)
-                    # A veces Aria2 tarda en liberar el archivo antes de que yt-dlp lo renombre.
+                    # A veces Fast tarda en liberar el archivo antes de que yt-dlp lo renombre.
                     str_err = str(e)
                     
                     if "WinError 32" in str_err or "used by another process" in str_err:

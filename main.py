@@ -102,8 +102,7 @@ async def cb(c, q):
         # Limpiar RAM antes de descargar, ya tenemos los datos en d_storage
         url_storage.pop(cid, None)
         
-        # Pasamos estado de fast
-        d_storage['fast_enabled'] = conf.get('fast_enabled', True)
+                'fast_enabled': conf.get('fast_enabled', True) # IMPORTANTE: Pasar estado de Fast
         
         asyncio.create_task(procesar_descarga(c, cid, url_target, data.split("|")[1], d_storage, msg))
         return
@@ -243,7 +242,7 @@ async def menu_help(c, m):
         "📝 **Metadatos (On/Off)**\n"
         "• 🟢 **Activo:** Añade Título, Resolución ⚙️, Duración ⏱ y Tags #️⃣ al video.\n"
         "• 🔴 **Inactivo:** Envía el video sin descripción extra.\n\n"
-        "🚀 **Aria2 (Ultra Velocidad)**\n"
+        "🚀 **Fast (Ultra Velocidad)**\n"
         "• 🟢 **Activo:** Descarga usando 16 conexiones simultáneas (Turbo).\n"
         "• 🔴 **Inactivo:** Modo estándar (Monohilo de yt-dlp).\n\n"
         "📄 **Modo Documento**\n"
@@ -850,7 +849,7 @@ async def analyze(c, m):
                 'titulo': info.get('title'), 
                 'tags': [], 
                 'html_links_data': html_links_data,
-                'aria2_enabled': conf.get('aria2_enabled', True) # IMPORTANTE: Pasar estado de Aria2
+                'fast_enabled': conf.get('fast_enabled', True) # IMPORTANTE: Pasar estado de Fast
             }
             await wait_msg.delete()
             # Limpiamos antes de auto-descarga

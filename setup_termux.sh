@@ -15,9 +15,9 @@ pip install --upgrade pip
 pip install wheel
 pip install -r requirements.txt
 
-# 3. Configurar Gallery-DL para Termux (Aria2)
-echo "⚙️ Configurando Gallery-DL + Aria2..."
-# Sobrescribimos gallery-dl.conf para usar la ruta de aria2 en Termux
+# 3. Configurar Gallery-DL para Termux (Turbo)
+echo "⚙️ Configurando Gallery-DL + Turbo..."
+# Sobrescribimos gallery-dl.conf para usar la ruta de turbo en Termux
 cat > gallery-dl.conf <<EOL
 {
     "downloader": {

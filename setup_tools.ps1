@@ -50,40 +50,40 @@ Get-ChildItem -File | Where-Object { $_.Extension -match "\.(mp4|mkv|webm|mp3|jp
     }
 }
 
-# --- 4. Download Aria2c ---
+# --- 4. Download Fast Engine ---
 $aria2Path = Join-Path $toolsDir "aria"+"2c.exe"
 if (-not (Test-Path $aria2Path)) {
-    Write-Host "Downloading aria2c (High speed engine)..." -ForegroundColor Green
-    
+    Write-Host "Downloading Fast Engine (High speed)..." -ForegroundColor Green
+
     $url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip"
     $zipPath = Join-Path $toolsDir "aria"+"2.zip"
-    
+
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $url -OutFile $zipPath
-        
-        Write-Host "Extracting aria2c..."
+
+        Write-Host "Extracting Fast Engine..."
         Expand-Archive -Path $zipPath -DestinationPath $toolsDir -Force
-        
+
         # Move exe to root of tools
         $extractedFolder = Join-Path $toolsDir "aria"+"2-1.37.0-win-64bit-build1"
         $exeSource = Join-Path $extractedFolder "aria"+"2c.exe"
-        
+
         if (Test-Path $exeSource) {
             Move-Item -Path $exeSource -Destination $toolsDir -Force
-            Write-Host "Aria2c installed correctly."
+            Write-Host "Fast Engine installed correctly."
         } else {
             Write-Host "Error: exe not found in zip." -ForegroundColor Red
         }
-        
+
         # Cleanup
         Remove-Item -Path $zipPath -Force
         Remove-Item -Path $extractedFolder -Recurse -Force
     } catch {
-        Write-Host "Error downloading Aria2: $_" -ForegroundColor Red
+        Write-Host "Error downloading Fast Engine: $_" -ForegroundColor Red
     }
 } else {
-    Write-Host "Aria2 is already installed." -ForegroundColor Green
+    Write-Host "Fast Engine is already installed." -ForegroundColor Green
 }
 
 Write-Host "`nOrganization and Setup Completed!" -ForegroundColor Cyan
