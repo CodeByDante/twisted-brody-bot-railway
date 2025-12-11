@@ -21,6 +21,7 @@ print("🚀 Iniciando Bot Pro (JAV Turbo + FB Fix + Auto-Swap)...")
 SESSION_PATH = os.path.join(DATA_DIR, "mi_bot_pro")
 app = Client(SESSION_PATH, api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=100)
 BOT_USERNAME = None
+print(f"🍪 Checking cookies dir: {os.listdir(os.path.join(DATA_DIR, '../cookies')) if os.path.exists(os.path.join(DATA_DIR, '../cookies')) else 'Missing cookies dir'}")
 
 # --- MENÚ PRINCIPAL ---
 def gen_kb(conf):

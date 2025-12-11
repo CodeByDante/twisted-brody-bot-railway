@@ -9,7 +9,7 @@ iniciar_bot.bat
 tools/
 tmp/
 downloads/
-cookies/
+# cookies/
 data/
 __pycache__/
 .git/
