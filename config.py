@@ -24,5 +24,6 @@ DB_FILE = "descargas.json"
 # Telegram limit 2GB, increased to 50GB for download before split
 LIMIT_2GB = 50 * 1024 * 1024 * 1024
 
-HAS_ARIA2 = shutil.which("aria2c") is not None
+# HAS_ARIA2 = shutil.which("aria2c") is not None
+HAS_ARIA2 = False # Desactivado por ban de Railway
 HAS_FFMPEG = shutil.which("ffmpeg") is not None

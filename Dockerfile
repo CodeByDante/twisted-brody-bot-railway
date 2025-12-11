@@ -1,7 +1,7 @@
 FROM python:3.10-slim
 
 # Instalar ffmpeg y dependencias del sistema
-# Instalar ffmpeg, aria2 y utilidades
+# Instalar ffmpeg y utilidades
 RUN apt-get update && apt-get install -y ffmpeg curl wget
 
 # Descargar N_m3u8DL-RE (Turbo) para Linux
