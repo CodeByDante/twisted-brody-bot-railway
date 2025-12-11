@@ -7,7 +7,7 @@ import yt_dlp
 import shutil
 import subprocess
 from pyrogram import enums
-from config import LIMIT_2GB, HAS_ARIA2
+from config import LIMIT_2GB, HAS_ARIA2, DOWNLOAD_DIR, TOOLS_DIR, ARIA2_PATH
 from database import get_config, downloads_db, guardar_db, add_active, remove_active
 from utils import sel_cookie, traducir_texto
 from tools_media import get_thumb, get_meta, get_audio_dur, progreso
@@ -16,12 +16,17 @@ from tools_media import get_thumb, get_meta, get_audio_dur, progreso
 TG_LIMIT = int(1.9 * 1024 * 1024 * 1024)
 
 # Detectamos si tienes la herramienta Turbo instalada (Cross-Platform)
-RE_PATH = shutil.which("N_m3u8DL-RE") 
-if not RE_PATH:
-    if os.path.exists("N_m3u8DL-RE.exe"): RE_PATH = "N_m3u8DL-RE.exe"
-    elif os.path.exists("N_m3u8DL-RE"): RE_PATH = "./N_m3u8DL-RE"
+# Priorizamos tools/
+RE_NAME = "N_m3u8DL-RE.exe" if os.name == 'nt' else "N_m3u8DL-RE"
+RE_PATH = os.path.join(TOOLS_DIR, RE_NAME)
 
-HAS_RE = RE_PATH is not None
+if not os.path.exists(RE_PATH):
+    RE_PATH = shutil.which("N_m3u8DL-RE") 
+    if not RE_PATH:
+         if os.path.exists("N_m3u8DL-RE.exe"): RE_PATH = "N_m3u8DL-RE.exe"
+         elif os.path.exists("N_m3u8DL-RE"): RE_PATH = "./N_m3u8DL-RE"
+
+HAS_RE = RE_PATH is not None and os.path.exists(RE_PATH)
 
 async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     conf = get_config(chat_id)
@@ -31,7 +36,8 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     thumb = None
     ts = int(time.time())
     status = None
-    base_name = f"dl_{chat_id}_{ts}"
+    # Usar directorio de descargas
+    base_name = os.path.join(DOWNLOAD_DIR, f"dl_{chat_id}_{ts}")
 
     url_descarga = url
     ckey = calidad
@@ -191,9 +197,10 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
              cookie_file = sel_cookie(url)
              
              cmd = [
-                 "aria2c", 
+                 ARIA2_PATH if os.path.exists(ARIA2_PATH) else "aria2c", 
                  url,
-                 "-o", f"{base_name}.mp4",
+                 "-o", f"dl_{chat_id}_{ts}.mp4", 
+                 "-d", DOWNLOAD_DIR,
                  "-x", "16", "-s", "16", "-j", "1", "-k", "1M",
                  "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                  "--check-certificate=false",
@@ -261,7 +268,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             if HAS_ARIA2 and not calidad.startswith("html_") and conf.get('aria2_enabled', True):
                 print(f"🚀 Usando Aria2 para: {url_descarga}")
                 opts.update({
-                    'external_downloader': 'aria2c',
+                    'external_downloader': ARIA2_PATH if os.path.exists(ARIA2_PATH) else 'aria2c',
                     'external_downloader_args': ['-x','16','-k','1M','-s','16']
                 })
 
@@ -310,7 +317,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             return
         
         file_size = os.path.getsize(final)
-        TG_LIMIT = 2000 * 1024 * 1024 # 2GB Reales
+        # Límite global seguro (1.9GB)
         
         await status.edit("📝 **Procesando Metadatos...**")
         w, h, dur = 0, 0, 0
@@ -327,27 +334,26 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             
         # --- LÓGICA DE CORTE (SPLIT) ---
         if file_size > TG_LIMIT and calidad != "mp3":
+            from utils import split_video_generic, format_bytes
+            
             sz_fmt = format_bytes(file_size)
-            await status.edit(f"✂️ **Tamaño: {sz_fmt} (>2GB).**\nCortando video en partes para Telegram...")
+            num_parts = int(-(-file_size // TG_LIMIT)) 
+            est_part_size = format_bytes(file_size / num_parts)
+
+            await status.edit(
+                f"✂️ **Video Grande Detectado ({sz_fmt})**\n"
+                f"🔪 Cortando en **{num_parts} partes** de ~**{est_part_size}**\n"
+                "⏳ Por favor espera..."
+            )
             
-            num_parts = int(-(-file_size // TG_LIMIT)) # Ceil division
-            part_dur = dur / num_parts
-            
-            new_files = []
-            for i in range(num_parts):
-                p_name = f"{base_name}_part{i+1}.mp4"
-                start = i * part_dur
-                # Usamos ffmpeg para cortar sin re-codificar (-c copy)
-                cmd = f'ffmpeg -ss {start} -t {part_dur} -i "{final}" -map 0 -c copy "{p_name}" -y'
-                proc = await asyncio.create_subprocess_shell(cmd)
-                await proc.wait()
-                if os.path.exists(p_name):
-                    new_files.append(p_name)
+            loop = asyncio.get_running_loop()
+            # Reutilizamos la lógica del Modo Party
+            new_files = await loop.run_in_executor(None, lambda: split_video_generic(final, 'parts', num_parts))
             
             if new_files:
                 files_to_send = new_files
                 is_split = True
-                try: os.remove(final) # Borramos el gigante original
+                try: os.remove(final) 
                 except: pass
 
         # --- BUCLE DE SUBIDA ---

@@ -5,3 +5,4 @@ deep-translator
 aiohttp
 requests
 gallery-dl
+google-generativeai

@@ -12,30 +12,13 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 from deep_translator import GoogleTranslator
 import yt_dlp
+from config import COOKIE_MAP, DB_FILE, LIMIT_2GB, HAS_ARIA2, HAS_FFMPEG, API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_DIR, DATA_DIR
 
 # --- IMPORTANTE: PLAYWRIGHT ---
 from playwright.async_api import async_playwright
 
-# --- TUS DATOS ---
-API_ID = 33226415                  
-API_HASH = "01999dae3e5348c7ab0dbcc6f7f4edc5"
-BOT_TOKEN = "8584312169:AAHQjPutXzS6sCPQ-NxIKp_5GsmjmvI9TEw"
-
-# --- COOKIES ---
-COOKIE_MAP = {
-    'tiktok': 'cookies_tiktok.txt',
-    'facebook': 'cookies_facebook.txt',
-    'pornhub': 'cookies_pornhub.txt',
-    'x.com': 'cookies_x.txt',
-    'twitter': 'cookies_x.txt',
-    'xvideos': 'cookies_xvideos.txt',
-}
-
-DB_FILE = 'descargas.json'
-LIMIT_2GB = 9999 * 1024 * 1024 # Sin límites 
-
-HAS_ARIA2 = shutil.which("aria2c") is not None
-HAS_FFMPEG = shutil.which("ffmpeg") is not None
+# --- TUS DATOS (Usando config.py) ---
+# API_ID, API_HASH, BOT_TOKEN importados
 
 url_storage = {}
 user_config = {} 
@@ -58,7 +41,9 @@ def guardar_db():
 
 cargar_db()
 
-app = Client("mi_bot_pro", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=16)
+# Guardar sesión en carpeta data
+SESSION_PATH = os.path.join(DATA_DIR, "mi_bot_pro")
+app = Client(SESSION_PATH, api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=16)
 
 # --- 1. CONFIGURACIÓN ---
 

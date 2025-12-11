@@ -3,7 +3,7 @@ import os
 import asyncio
 import requests
 from deep_translator import GoogleTranslator
-from config import COOKIE_MAP
+from config import COOKIE_MAP, TOOLS_DIR
 
 def format_bytes(size):
     if not size or size <= 0: return "N/A"
@@ -65,13 +65,19 @@ async def traducir_texto(texto):
         return await loop.run_in_executor(None, lambda: GoogleTranslator(source='auto', target='es').translate(texto))
     except: return texto
 
-# Ruta directa a gallery-dl (Hardcoded por seguridad tras install)
-# Ajustar si es necesario.
-GALLERY_DL_EXEC = "gallery-dl" 
-if os.path.exists(r"C:\Users\Gonzalo\AppData\Roaming\Python\Python311\Scripts\gallery-dl.exe"):
-    GALLERY_DL_EXEC = r"C:\Users\Gonzalo\AppData\Roaming\Python\Python311\Scripts\gallery-dl.exe"
+# Ruta a gallery-dl
+# Prioridad: 1. Pip Install (Latest) | 2. Tools Local (Portable) | 3. System Path
+PIP_GALLERY_PATH = r"C:\Users\Gonzalo\AppData\Roaming\Python\Python311\Scripts\gallery-dl.exe"
+TOOLS_GALLERY_PATH = os.path.join(TOOLS_DIR, "gallery-dl.exe")
 
-def descargar_galeria(url, cookie_file="cookies_x.txt"):
+if os.path.exists(PIP_GALLERY_PATH):
+    GALLERY_DL_EXEC = PIP_GALLERY_PATH
+elif os.path.exists(TOOLS_GALLERY_PATH):
+    GALLERY_DL_EXEC = TOOLS_GALLERY_PATH
+else:
+    GALLERY_DL_EXEC = "gallery-dl"
+
+def descargar_galeria(url, cookie_file=None):
     """
     Descarga imágenes de X/Twitter/Facebook usando gallery-dl.
     Retorna una lista de rutas de archivos descargados y el directorio temporal.
@@ -92,6 +98,7 @@ def descargar_galeria(url, cookie_file="cookies_x.txt"):
     # Usamos -d para forzar una carpeta base
     cmd = [
         GALLERY_DL_EXEC,
+        "--config", "gallery-dl.conf",
         "--destination", tmp_dir,
         "--no-mtime",
         "-q",
@@ -100,7 +107,9 @@ def descargar_galeria(url, cookie_file="cookies_x.txt"):
     if cookie_file:
         cmd.extend(["--cookies", cookie_file])
         
-    cmd.append(url)
+    # FIX: Gallery-DL v1.26 no soporta x.com nativamente, forzamos twitter.com
+    url_fixed = url.replace("x.com", "twitter.com")
+    cmd.append(url_fixed)
     
     print(f"📸 Ejecutando Gallery-DL ({cookie_file}): {' '.join(cmd)}")
     
@@ -179,3 +188,76 @@ async def scan_channel_history(client, chat_id, limit=None):
         import traceback
         traceback.print_exc()
         return 0
+
+def split_video_generic(input_path, mode, value):
+    """
+    Divide video por: 'parts', 'min', 'sec'.
+    mode: 'parts' (value=num), 'min' (value=minutos), 'sec' (value=segundos)
+    """
+    import subprocess
+    import glob
+    import os
+    
+    if not os.path.exists(input_path): return []
+    
+    try:
+        # 1. Obtener duración
+        cmd_dur = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", input_path
+        ]
+        duration = float(subprocess.check_output(cmd_dur).decode().strip())
+    except Exception as e:
+        print(f"Error duration: {e}")
+        return []
+
+    if duration < 1: return []
+
+    # 2. Calcular segment_time
+    segment_time = 0
+    if mode == 'parts':
+        segment_time = duration / int(value)
+    elif mode == 'min':
+        segment_time = float(value) * 60
+    elif mode == 'sec':
+        segment_time = float(value)
+        
+    if segment_time <= 0: return []
+    
+    # 3. Directorio salida
+    base_dir = os.path.dirname(input_path)
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_pattern = os.path.join(base_dir, f"{base_name}_part%03d.mp4")
+    
+    # 4. Dividir
+    cmd_split = [
+        "ffmpeg", "-y", "-i", input_path, "-c", "copy",
+        "-f", "segment", "-segment_time", str(segment_time),
+        "-reset_timestamps", "1", output_pattern
+    ]
+    
+    # print(f"✂️ Splitting {mode}={value} (seg={segment_time:.2f})")
+    subprocess.run(cmd_split, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # 5. Listar resultados
+    parts = sorted(glob.glob(os.path.join(base_dir, f"{base_name}_part*.mp4")))
+    return parts
+
+def get_video_metadata(path):
+    """Retorna (width, height) del video."""
+    import subprocess
+    import json
+    try:
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "json", path
+        ]
+        # Si no hay json en imports globales... importarlo dentro.
+        out = subprocess.check_output(cmd).decode()
+        data = json.loads(out)
+        w = data['streams'][0]['width']
+        h = data['streams'][0]['height']
+        return w, h
+    except Exception as e:
+        print(f"Meta Error: {e}")
+        return 0, 0

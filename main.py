@@ -5,7 +5,7 @@ import time
 import re
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo
-from config import API_ID, API_HASH, BOT_TOKEN
+from config import API_ID, API_HASH, BOT_TOKEN, DATA_DIR, COOKIE_MAP
 from database import get_config, url_storage, hashtag_db, can_download, cancel_all
 from utils import format_bytes, limpiar_url, sel_cookie, resolver_url_facebook, descargar_galeria, scan_channel_history
 import shutil
@@ -18,23 +18,35 @@ from downloader import procesar_descarga
 
 print("🚀 Iniciando Bot Pro (JAV Turbo + FB Fix + Auto-Swap)...")
 
-app = Client("mi_bot_pro", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=100)
+SESSION_PATH = os.path.join(DATA_DIR, "mi_bot_pro")
+app = Client(SESSION_PATH, api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=100)
 BOT_USERNAME = None
 
 # --- MENÚ PRINCIPAL ---
 def gen_kb(conf):
+    # --- MODO PARTY (Exclusivo) ---
+    if conf.get('party_mode'):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Atrás (Salir Modo Party)", callback_data="menu|party_off")]
+        ])
+
+    # --- MODO IA (Exclusivo) ---
+    if conf.get('ai_mode'):
+         return InlineKeyboardMarkup([
+             [InlineKeyboardButton("🔙 Atrás (Salir Modo IA)", callback_data="menu|ai_off")]
+         ])
+
     c_html = "🟢" if conf['html_mode'] else "🔴"
     c_meta = "🟢" if conf['meta'] else "🔴"
+    lang_flag = "🇪🇸" if conf.get('lang', 'es') == 'es' else "🇺🇸"
     
     txt_auto = "Desact."
     if conf['q_auto'] == 'max': txt_auto = "Máx"
     elif conf['q_auto'] == 'min': txt_auto = "Mín"
     
-    lang_icon = "🇪🇸 ES" if conf['lang'] == 'es' else "🇺🇸 Orig"
     fmt_icon = "🎵 MP3" if conf['fmt'] == 'mp3' else "📹 MP4"
     aria_icon = "🟢" if conf.get('aria2_enabled', True) else "🔴"
     doc_icon = "🟢" if conf.get('doc_mode', False) else "🔴"
-    replay_icon = "🟢" if conf.get('replay_enabled', False) else "🔴"
 
     kb = [
         [# InlineKeyboardButton(f"🕵️ Sniffer (HTML): {c_html}", callback_data="toggle|html"), 
@@ -43,17 +55,18 @@ def gen_kb(conf):
         [InlineKeyboardButton(f"🚀 Aria2: {aria_icon}", callback_data="toggle|aria2"),
          InlineKeyboardButton(f"📄 Doc: {doc_icon}", callback_data="toggle|doc")],
 
-        [InlineKeyboardButton(f"🔄 Comandos Replay: {replay_icon}", callback_data="toggle|replay")],
+        # [InlineKeyboardButton(f"🔄 Comandos Replay: {replay_icon}", callback_data="toggle|replay")], # Eliminado
     ]
     
-    # Botón condicional para agregar al canal
-    if conf.get('replay_enabled') and BOT_USERNAME:
-        kb.append([InlineKeyboardButton("➕ Agregar a Canal", url=f"https://t.me/{BOT_USERNAME}?startchannel&admin=post_messages+edit_messages+delete_messages")])
+    # Botón condicional Agregado (Si aplica, pero replay_enabled ya no se usa, lo quitamos de config?)
+    # Mejor quitar todo rastro de replay visual.
 
     kb.extend([
-        [InlineKeyboardButton(f"⚙️ Auto: {txt_auto}", callback_data="menu|auto"),
-         InlineKeyboardButton(f"🌎 Idioma: {lang_icon}", callback_data="toggle|lang")],
+        [InlineKeyboardButton(f"⚙️ Auto: {txt_auto}", callback_data="menu|auto")],
+        [InlineKeyboardButton(f"🌐 Idioma: {lang_flag}", callback_data="toggle|lang")],
         
+        [InlineKeyboardButton("✂️ Party (Cortador)", callback_data="menu|party_on"),
+         InlineKeyboardButton("🤖 Modo IA", callback_data="menu|ai_on")],
         [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
     ])
     
@@ -91,8 +104,8 @@ async def cb(c, q):
     elif data == "toggle|meta": conf['meta'] = not conf['meta']
     elif data == "toggle|aria2": conf['aria2_enabled'] = not conf.get('aria2_enabled', True)
     elif data == "toggle|doc": conf['doc_mode'] = not conf.get('doc_mode', False)
-    elif data == "toggle|replay": conf['replay_enabled'] = not conf.get('replay_enabled', False)
-    elif data == "toggle|lang": conf['lang'] = 'es' if conf['lang'] == 'orig' else 'orig'
+    # elif data == "toggle|replay": conf['replay_enabled'] = not conf.get('replay_enabled', False) # Eliminado
+    elif data == "toggle|lang": conf['lang'] = 'es' if conf.get('lang', 'es') == 'orig' else 'orig'
     elif data == "toggle|fmt": conf['fmt'] = 'mp3' if conf['fmt'] == 'mp4' else 'mp4'
     
     elif data == "menu|auto":
@@ -107,12 +120,53 @@ async def cb(c, q):
         v = data.split("|")[1]
         conf['q_auto'] = None if v == "off" else v
 
+    # --- HANDLERS MODO PARTY ---
+    elif data == "menu|party_on":
+        conf['party_mode'] = True
+        await msg.edit_text("✂️ **Modo Party Activo**\n\nEnvía un video (archivo) y te preguntaré en cuántas partes cortarlo.", reply_markup=gen_kb(conf))
+        return
+
+    elif data == "menu|party_off":
+        conf['party_mode'] = False
+        await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
+        return
+
+    # --- SELECCION PARTY ---
+    elif "party_sel" in data:
+        mode = data.split("|")[1]
+        cid = msg.chat.id
+        
+        # Actualizar estado
+        if cid in url_storage:
+             url_storage[cid]['party_step'] = 'wait_value'
+             url_storage[cid]['mode'] = mode
+             
+        txt_map = {
+            'parts': "🧩 **¿En cuántas partes?**\nEnvía el número (ej: 2, 3...)",
+            'min': "⏱ **¿Cada cuántos MINUTOS?**\nEnvía los minutos (ej: 10, 30...)",
+            'sec': "⏱ **¿Cada cuántos SEGUNDOS?**\nEnvía los segundos (ej: 30, 90...)"
+        }
+        await msg.edit_text(txt_map.get(mode, "Error."))
+        return
+    # ---------------------------
+
+    # --- HANDLERS MODO IA ---
+    elif data == "menu|ai_on":
+        conf['ai_mode'] = True
+        await msg.edit_text("🤖 **Modo IA Activo**\n\nSoy Brody. ¿En qué puedo ayudarte?", reply_markup=gen_kb(conf))
+        return
+
+    elif data == "menu|ai_off":
+        conf['ai_mode'] = False
+        await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
+        return
+
     elif data == "menu|main": pass
     elif data == "start": pass # Para el botón de volver del start
 
     await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
 
-@app.on_message(filters.command(["start", "inicio"]))
+@app.on_message(filters.command("start"))
 async def start(c, m):
     await m.reply_text("⚙️ **Configuración Bot Pro**", reply_markup=gen_kb(get_config(m.chat.id)))
 
@@ -155,14 +209,7 @@ async def menu_help(c, m):
     )
     await m.reply_text(help_text)
 
-@app.on_message(filters.command("scan"))
-async def scan_command(c, m):
-    msg = await m.reply_text("🔄 **Iniciando escaneo del canal...**\n(Esto puede tardar si hay muchos mensajes)")
-    try:
-        count = await scan_channel_history(c, m.chat.id)
-        await msg.edit(f"✅ **Escaneo completado.**\n\n📌 Mensajes con #Hashtags indexados: **{count}**")
-    except Exception as e:
-        await msg.edit(f"❌ Error escaneando: {e}")
+# Scan command removed
 
 @app.on_message(filters.command("cancel"))
 async def cancel_command(c, m):
@@ -222,6 +269,127 @@ async def hashtag_replay_handler(c, m):
             
         await status_msg.edit(f"✅ **Reenvío de #{tag} finalizado.**")
 
+# --- AI MODE HANDLER ---
+@app.on_message(filters.text & ~filters.regex(r"^/"))
+async def ai_text_handler(c, m):
+    cid = m.chat.id
+    conf = get_config(cid)
+    
+    if not conf.get('ai_mode'):
+        m.continue_propagation()
+        return
+
+    from ai_brain import ask_gemini
+    from pyrogram import enums
+    
+    await c.send_chat_action(cid, enums.ChatAction.TYPING)
+    resp = await ask_gemini(m.text)
+    
+    # --- TOOL CALL CHECK (IA invoca descarga) ---
+    if "CMD_DL:" in resp:
+        url = resp.split("CMD_DL:")[1].strip()
+        await m.reply(f"🤖 **Entendido.** Procesando enlace: {url}...", quote=True)
+        
+        # Truco: Modificamos el texto del mensaje y llamamos a analyze
+        m.text = url
+        await analyze(c, m)
+        m.stop_propagation()
+        return
+    # --------------------------------------------
+
+    await m.reply(resp, quote=True)
+    # Evitar que otros handlers (como downloader) procesen el texto
+    m.stop_propagation()
+
+# --- PARTY MODE HANDLERS ---
+@app.on_message(filters.video | filters.document)
+async def party_video_handler(c, m):
+    cid = m.chat.id
+    conf = get_config(cid)
+    
+    if not conf.get('party_mode'):
+        m.continue_propagation()
+        return
+
+    # Si es documento, filtrar por video pero ser flexible
+    if m.document and m.document.mime_type and not m.document.mime_type.startswith("video"):
+         m.continue_propagation()
+         return 
+
+    wait = await m.reply("⬇️ **Descargando video para Party Mode...**", quote=True)
+    temp_dir = os.path.join(DATA_DIR, f"party_{cid}")
+    if not os.path.exists(temp_dir): os.makedirs(temp_dir, exist_ok=True)
+    
+    fpath = await c.download_media(m, file_name=os.path.join(temp_dir, "input.mp4"))
+    await wait.delete()
+    
+    if not fpath:
+        await m.reply("❌ Error descargando.")
+        return
+
+    url_storage[cid] = {'party_step': 'wait_mode', 'file': fpath}
+    
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏱ Minutos", callback_data="party_sel|min"),
+         InlineKeyboardButton("⏱ Segundos", callback_data="party_sel|sec")],
+        [InlineKeyboardButton("🧩 Partes", callback_data="party_sel|parts")],
+        [InlineKeyboardButton("🔙 Cancelar", callback_data="menu|party_off")]
+    ])
+    
+    await m.reply("✂️ **Modo Party: ¿Cómo quieres cortar?**", quote=True, reply_markup=kb)
+
+@app.on_message(filters.text & ~filters.regex(r"^/"))
+async def party_text_handler(c, m):
+    cid = m.chat.id
+    conf = get_config(cid)
+    
+    if not conf.get('party_mode'):
+        m.continue_propagation()
+        return
+
+    st = url_storage.get(cid)
+    if not st or st.get('party_step') != 'wait_value':
+        m.continue_propagation()
+        return
+
+    mode = st.get('mode', 'parts')
+    
+    try:
+        val = float(m.text.strip())
+        if val <= 0: raise ValueError
+        if mode == 'parts': val = int(val)
+    except:
+        m.continue_propagation()
+        return
+
+    from utils import split_video_generic, get_video_metadata, format_bytes
+    fpath = st['file']
+    w_orig, h_orig = get_video_metadata(fpath)
+    
+    # Estimación básica
+    msg_txt = f"✂️ **Procesando corte ({mode}={val})...**"
+    if mode == 'parts':
+         total_size = os.path.getsize(fpath)
+         est = format_bytes(total_size / val)
+         msg_txt += f"\n⚖️ **Peso estimado:** ~{est} c/u"
+
+    await m.reply(msg_txt)
+    
+    parts = await asyncio.get_running_loop().run_in_executor(None, lambda: split_video_generic(fpath, mode, val))
+    
+    if parts:
+        await m.reply(f"✅ **Generadas {len(parts)} partes.** Subiendo...")
+        for p in parts:
+            await c.send_video(cid, p, width=w_orig, height=h_orig)
+            try: os.remove(p)
+            except: pass
+    else:
+        await m.reply("❌ Error al cortar. (Verifica duración/formato)")
+        
+    try: os.remove(fpath)
+    except: pass
+    url_storage.pop(cid, None)
+
 @app.on_message(filters.text & (filters.regex("http") | filters.regex("www")))
 async def analyze(c, m):
     cid = m.chat.id
@@ -243,7 +411,7 @@ async def analyze(c, m):
     
     url = limpiar_url(match.group(1))
     
-    wait_msg = await m.reply("🔎 **Analizando enlace...**", quote=True)
+    wait_msg = await m.reply("⬇️ **Descargando...**", quote=True)
     
     # 1. FIX FACEBOOK
     if "facebook.com" in url or "fb.watch" in url:
@@ -256,72 +424,72 @@ async def analyze(c, m):
     info = {}
     yt_dlp_error = None
 
-    # -----------------------------------------------------------
-    # 1.5. MODO GALERIA (X/Twitter/Facebook/Pinterest)
-    # -----------------------------------------------------------
-    is_twitter = "twitter.com" in url or "x.com" in url
-    is_facebook = any(d in url for d in ["facebook.com", "m.facebook.com", "fb.com", "fb.watch"])
-    is_pinterest = "pinterest" in url or "pin.it" in url
+    # --- FUNCIÓN INTERNAL: FALLBACK GALERÍA ---
+    async def process_gallery_fallback():
+        is_twitter = "twitter.com" in url or "x.com" in url
+        is_facebook = any(d in url for d in ["facebook.com", "m.facebook.com", "fb.com", "fb.watch"])
+        is_pinterest = "pinterest" in url or "pin.it" in url
+        
+        if not (is_twitter or is_facebook or is_pinterest):
+            return False
 
-    if is_twitter or is_facebook or is_pinterest:
         site_name = "X/Twitter"
         if is_facebook: site_name = "Facebook"
         if is_pinterest: site_name = "Pinterest"
         
-        print(f"🐦 Detectado enlace de {site_name}. Usando Gallery-DL...")
-        await wait_msg.edit(f"🐦 **Procesando {site_name} con Gallery-DL...**")
+        print(f"🐦 Fallback: Detectado {site_name}. Intentando Gallery-DL...")
+        # await wait_msg.edit(f"🐦 **No se detectó video.**\n📸 Probando {site_name} (Imágenes)...") # Silenciado a petición del usuario
         
-        cookie_file = "cookies_x.txt" if is_twitter else ("cookies_facebook.txt" if is_facebook else None)
+        # Usar rutas absolutas de COOKIE_MAP
+        cookie_file = COOKIE_MAP.get('x.com') if is_twitter else (COOKIE_MAP.get('facebook') if is_facebook else None)
         
-        # Ejecutar en thread aparte para no bloquear
         g_files, g_tmp = await asyncio.get_running_loop().run_in_executor(
             None, lambda: descargar_galeria(url, cookie_file)
         )
         
         if g_files:
             try:
-                await wait_msg.edit(f"📸 **Encontrados {len(g_files)} archivos.**\nSubiendo...")
+                # Modificado a petición usuaria: Mensaje directo sin previo aviso de conteo
+                txt_status = "⬇️ **Descargando imagen...**" if len(g_files) == 1 else f"⬇️ **Descargando {len(g_files)} imágenes...**"
+                await wait_msg.edit(txt_status)
                 
-                # Función helper para determinar tipo de medio
                 def get_media_item(fpath):
-                    is_video = fpath.lower().endswith(('.mp4', '.mkv', '.webm', '.mov'))
-                    if conf.get('doc_mode'):
-                        return InputMediaDocument(fpath)
-                    elif is_video:
-                         return InputMediaVideo(fpath)
-                    else:
-                         return InputMediaPhoto(fpath)
+                    is_p_video = fpath.lower().endswith(('.mp4', '.mkv', '.webm', '.mov'))
+                    if conf.get('doc_mode'): return InputMediaDocument(fpath)
+                    elif is_p_video: return InputMediaVideo(fpath)
+                    else: return InputMediaPhoto(fpath)
 
-                # Crear MediaGroup si hay más de 1, o enviar simple
                 if len(g_files) > 1:
                     media_group = [get_media_item(f) for f in g_files[:10]] 
                     await c.send_media_group(cid, media_group, reply_to_message_id=m.id)
-                    
-                    if len(g_files) > 10:
-                        await c.send_message(cid, f"⚠️ Se enviaron los primeros 10 de {len(g_files)} archivos.")
+                    if len(g_files) > 10: await c.send_message(cid, f"⚠️ Se enviaron los primeros 10 de {len(g_files)} archivos.")
                 else:
                     fpath = g_files[0]
-                    is_video = fpath.lower().endswith(('.mp4', '.mkv', '.webm', '.mov'))
-                    if conf.get('doc_mode'):
-                        await c.send_document(cid, fpath, caption=f"📁 Archivo de {site_name}\n🔗 {url}", reply_to_message_id=m.id)
-                    elif is_video:
-                        await c.send_video(cid, fpath, caption=f"🎬 Video de {site_name}\n🔗 {url}", reply_to_message_id=m.id)
-                    else:
-                        await c.send_photo(cid, fpath, caption=f"📸 Imagen de {site_name}\n🔗 {url}", reply_to_message_id=m.id)
-                
+                    is_p_video = fpath.lower().endswith(('.mp4', '.mkv', '.webm', '.mov'))
+                     
+                    cap = ""
+                    if conf.get('meta'):
+                        if conf.get('doc_mode'): cap = f"📁 {site_name}\n🔗 {url}"
+                        elif is_p_video: cap = f"🎬 {site_name}\n🔗 {url}"
+                        else: cap = f"📸 {site_name}\n🔗 {url}"
+
+                    if conf.get('doc_mode'): await c.send_document(cid, fpath, caption=cap, reply_to_message_id=m.id)
+                    elif is_p_video: await c.send_video(cid, fpath, caption=cap, reply_to_message_id=m.id)
+                    else: await c.send_photo(cid, fpath, caption=cap, reply_to_message_id=m.id)
+
                 await wait_msg.delete()
+                return True
             except Exception as e:
-                print(f"❌ Error crítico enviando galería: {e}")
-                await wait_msg.edit(f"❌ Error enviando archivos: {e}")
+                print(f"❌ Error Gallery fallback: {e}")
+                return False
             finally:
-                # Limpiar siempre
                 if g_tmp and os.path.exists(g_tmp):
                     try: shutil.rmtree(g_tmp)
                     except: pass
-            return # TERMINAMOS AQUÍ, no seguir a yt-dlp
-        else:
-            print(f"⚠️ Gallery-DL no encontró archivos en {site_name}. Intentando descarga estándar...")
-            await wait_msg.edit("⚠️ No se encontró galería. Intentando modo video estándar...")
+        return False
+
+    # -----------------------------------------------------------
+
 
     # -----------------------------------------------------------
     # 2. JAV TURBO (Extracción Directa)
@@ -404,36 +572,44 @@ async def analyze(c, m):
                 await wait_msg.edit("⚠️ **Usando método alternativo...**")
                 info = await extraer(mbasic_url, mode="mobile_legacy")
             else:
-                 # --- FALLBACK: Link Directo ---
-                if any(x in url for x in ['.m3u8', '.mp4', 'phncdn']):
-                   print(f"⚠️ Fallback: Error YT-DLP ignorado por ser Link Directo: {e}")
-                   ts_fb = int(time.time())
-                   info = {
-                       'id': f"direct_{ts_fb}",
-                       'title': 'Archivo Directo (Fallback)',
-                       'url': url,
-                       'ext': 'mp4',
-                       'formats': [] 
-                   }
-                   yt_dlp_error = None
-                else:
-                   raise e
+                 # 2. Fallback Gallery (Twitter/X Imágenes)
+                 if await process_gallery_fallback():
+                     return
+
+                 # 3. Fallback: Link Directo
+                 if any(x in url for x in ['.m3u8', '.mp4', 'phncdn']):
+                    print(f"⚠️ Fallback: Error YT-DLP ignorado por ser Link Directo: {e}")
+                    ts_fb = int(time.time())
+                    info = {
+                        'id': f"direct_{ts_fb}",
+                        'title': 'Archivo Directo (Fallback)',
+                        'url': url,
+                        'ext': 'mp4',
+                        'formats': [] 
+                    }
+                    yt_dlp_error = None
+                 else:
+                    # Si no es nada de lo anterior, lanzamos el error
+                    raise e
         except asyncio.TimeoutError:
             print("❌ Timeout en YT-DLP.")
             await wait_msg.edit("❌ **Error: Tiempo de espera agotado.**\nLa página tarda demasiado en responder.")
             return
 
-        # --- FALLBACK: Si info es None (ignoreerrors=True) ---
-        if info is None and any(x in url for x in ['.m3u8', '.mp4', 'phncdn', 'surrit']): # Added surrit just in case
-             print(f"⚠️ Fallback: YT-DLP devolvió None. Usando Modo Directo.")
-             ts_fb = int(time.time())
-             info = {
-                 'id': f"direct_{ts_fb}",
-                 'title': 'Archivo Directo (Fallback)',
-                 'url': url,
-                 'ext': 'mp4',
-                 'formats': [] 
-             }
+        # --- FALLBACK: Si info es None ---
+        if info is None:
+             if await process_gallery_fallback(): return
+
+             if any(x in url for x in ['.m3u8', '.mp4', 'phncdn', 'surrit']): # Added surrit just in case
+                 print(f"⚠️ Fallback: YT-DLP devolvió None. Usando Modo Directo.")
+                 ts_fb = int(time.time())
+                 info = {
+                     'id': f"direct_{ts_fb}",
+                     'title': 'Archivo Directo (Fallback)',
+                     'url': url,
+                     'ext': 'mp4',
+                     'formats': [] 
+                 }
         
         if info and 'entries' in info: info = info['entries'][0]
         
@@ -588,9 +764,9 @@ if __name__ == "__main__":
         try:
             await app.set_bot_commands([
                 BotCommand("start", "⚙️ Configuración y Estado"),
-                BotCommand("inicio", "🚀 Reiniciar Panel (Alias)"),
+                # BotCommand("inicio", "🚀 Reiniciar Panel (Alias)"),
                 BotCommand("menu", "📖 Guía de Ayuda y Funciones"),
-                BotCommand("scan", "🔄 Escanear Canal (Admin)"),
+                # BotCommand("scan", "🔄 Escanear Canal (Admin)"),
                 BotCommand("cancel", "🛑 Cancelar descargas activas")
             ])
             print("✅ Comandos registrados con éxito.")

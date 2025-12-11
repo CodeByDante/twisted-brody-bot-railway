@@ -1,8 +1,8 @@
 import json
 import os
-from config import DB_FILE
+from config import DB_FILE, DATA_DIR
 
-DB_TAGS = "hashtags.json"
+DB_TAGS = os.path.join(DATA_DIR, "hashtags.json")
 
 # --- VARIABLES GLOBALES (NO BORRAR) ---
 url_storage = {}    # <-- Esta es la variable que te faltaba
@@ -49,7 +49,7 @@ def save_tags():
 def get_config(chat_id):
     if chat_id not in user_config:
         user_config[chat_id] = {
-            'lang': 'orig', 
+            'lang': 'es', 
             'fmt': 'mp4',
             'q_fixed': None, 
             'q_auto': None, 
@@ -57,25 +57,14 @@ def get_config(chat_id):
             'aria2_enabled': True,
             'html_mode': False,
             'doc_mode': False,
-            'replay_enabled': False # <--- Nuevo modo replay
+            'replay_enabled': False, # <--- Nuevo modo replay
+            'party_mode': False,
+    'ai_mode': False, # Modo Party
         }
     return user_config[chat_id]
 
 def can_download(chat_id, max_concurrent=3, cooldown_sec=2):
-    import time
-    
-    # 1. Check Cooldown
-    last_time = user_cooldowns.get(chat_id, 0)
-    if time.time() - last_time < cooldown_sec:
-        return False, f"⏳ Espera {cooldown_sec}s entre comandos."
-    
-    user_cooldowns[chat_id] = time.time()
-    
-    # 2. Check Concurrent Limits
-    current_active = len(active_downloads.get(chat_id, {}))
-    if current_active >= max_concurrent:
-        return False, f"⚠️ Límite de descargas activas ({max_concurrent}) alcanzado."
-        
+    # Restricciones deshabilitadas a petición del usuario (Modo Ilimitado)
     return True, None
 
 def add_active(chat_id, msg_id, task=None):
