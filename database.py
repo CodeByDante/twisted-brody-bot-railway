@@ -54,7 +54,7 @@ def get_config(chat_id):
             'q_fixed': None, 
             'q_auto': None, 
             'meta': True,
-            'aria2_enabled': True,
+            'fast_enabled': True,
             'html_mode': False,
             'doc_mode': False,
             'replay_enabled': False, # <--- Nuevo modo replay

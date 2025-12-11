@@ -52,14 +52,14 @@ def gen_kb(conf):
     elif conf['q_auto'] == 'min': txt_auto = "Mín"
     
     fmt_icon = "🎵 MP3" if conf['fmt'] == 'mp3' else "📹 MP4"
-    aria_icon = "🟢" if conf.get('aria2_enabled', True) else "🔴"
+    aria_icon = "🟢" if conf.get('fast_enabled', True) else "🔴"
     doc_icon = "🟢" if conf.get('doc_mode', False) else "🔴"
 
     kb = [
         [# InlineKeyboardButton(f"🕵️ Sniffer (HTML): {c_html}", callback_data="toggle|html"), 
          InlineKeyboardButton(f"📝 Metadatos: {c_meta}", callback_data="toggle|meta")],
         
-        [InlineKeyboardButton(f"🚀 Aria2: {aria_icon}", callback_data="toggle|aria2"),
+        [InlineKeyboardButton(f"🚀 Turbo: {aria_icon}", callback_data="toggle|fast"),
          InlineKeyboardButton(f"📄 Doc: {doc_icon}", callback_data="toggle|doc")],
 
         # [InlineKeyboardButton(f"🔄 Comandos Replay: {replay_icon}", callback_data="toggle|replay")], # Eliminado
@@ -102,15 +102,15 @@ async def cb(c, q):
         # Limpiar RAM antes de descargar, ya tenemos los datos en d_storage
         url_storage.pop(cid, None)
         
-        # Pasamos estado de aria2
-        d_storage['aria2_enabled'] = conf.get('aria2_enabled', True)
+        # Pasamos estado de fast
+        d_storage['fast_enabled'] = conf.get('fast_enabled', True)
         
         asyncio.create_task(procesar_descarga(c, cid, url_target, data.split("|")[1], d_storage, msg))
         return
 
     if data == "toggle|html": conf['html_mode'] = not conf['html_mode']
     elif data == "toggle|meta": conf['meta'] = not conf['meta']
-    elif data == "toggle|aria2": conf['aria2_enabled'] = not conf.get('aria2_enabled', True)
+    elif data == "toggle|fast": conf['fast_enabled'] = not conf.get('fast_enabled', True)
     elif data == "toggle|doc": conf['doc_mode'] = not conf.get('doc_mode', False)
     # elif data == "toggle|replay": conf['replay_enabled'] = not conf.get('replay_enabled', False) # Eliminado
     elif data == "toggle|lang": conf['lang'] = 'es' if conf.get('lang', 'es') == 'orig' else 'orig'

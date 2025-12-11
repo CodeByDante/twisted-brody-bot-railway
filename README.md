@@ -7,7 +7,7 @@ Bot de Telegram avanzado para descargar videos de múltiples plataformas (X/Twit
 - **Modo Party (Cortador):** Corta videos por partes iguales, tiempo o rango manual (Ej: 10:00 - 10:30).
 - **Modo Compresor:** Reduce el peso de videos (Ligero/Medio/Fuerte) usando FFmpeg.
 - **JAV Turbo:** Extractor directo para sitios JAV (.m3u8) para máxima velocidad.
-- **Aceleración Aria2:** Descargas utra-rápidas (16 conexiones por archivo).
+- **Aceleración Turbo:** Descargas ultra-rápidas (16 conexiones por archivo).
 - **Gestión de Cookies:** Soporte para cuentas premium/privadas.
 - **Metadatos Inteligentes:** Opcional (Título, duración, resolución).
 

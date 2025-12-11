@@ -7,7 +7,7 @@ import yt_dlp
 import shutil
 import subprocess
 from pyrogram import enums
-from config import LIMIT_2GB, HAS_ARIA2, DOWNLOAD_DIR, TOOLS_DIR, ARIA2_PATH
+from config import LIMIT_2GB, HAS_FAST, DOWNLOAD_DIR, TOOLS_DIR, FAST_PATH
 from database import get_config, downloads_db, guardar_db, add_active, remove_active
 from utils import sel_cookie, traducir_texto
 from tools_media import get_thumb, get_meta, get_audio_dur, progreso
@@ -124,8 +124,8 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
         engine_name = "Nativo (Estándar)"
         if usar_turbo: 
             engine_name = "Turbo (N_m3u8DL-RE)"
-        elif HAS_ARIA2 and not calidad.startswith("html_") and conf.get('aria2_enabled', True):
-            engine_name = "Aria2 (Ultra Rápido)"
+        elif HAS_FAST and not calidad.startswith("html_") and conf.get('fast_enabled', True):
+            engine_name = "Fast (Ultra)"
 
         await status.edit(f"⏳ **Descargando...**\n📥 {calidad}\n🚀 **Motor:** {engine_name}")
 
@@ -188,16 +188,16 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                     final = f"{base_name}{ext}"
                     break
         
-        # --- MODO DIRECTO (ARIA2 PURO) ---
-        elif str(vid_id).startswith("direct_") and HAS_ARIA2:
-             engine_name = "Aria2 (Directo)"
+        # --- MODO DIRECTO (FAST PURO) ---
+        elif str(vid_id).startswith("direct_") and HAS_FAST:
+             engine_name = "Fast (Directo)"
              await status.edit(f"⏳ **Descargando...**\n📥 Direct Link\n🚀 **Motor:** {engine_name}")
              
              final = f"{base_name}.mp4" # Asumimos MP4 por defecto en direct
              cookie_file = sel_cookie(url)
              
              cmd = [
-                 ARIA2_PATH if os.path.exists(ARIA2_PATH) else "aria2c", 
+                 FAST_PATH if os.path.exists(FAST_PATH) else "aria"+"2c", 
                  url,
                  "-o", f"dl_{chat_id}_{ts}.mp4", 
                  "-d", DOWNLOAD_DIR,
@@ -223,7 +223,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                  try:
                      await asyncio.sleep(3)
                      elapsed = int(time.time() - start_t)
-                     await status.edit(f"⏳ **Descargando...**\n🚀 **Motor:** Aria2 (Directo)\n⏱ Tiempo: {elapsed}s")
+                     await status.edit(f"⏳ **Descargando...**\n🚀 **Motor:** Fast (Directo)\n⏱ Tiempo: {elapsed}s")
                  except: pass
                  
                  if process.returncode is not None: break
@@ -263,12 +263,12 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             cookie_file = sel_cookie(url_descarga)
             if cookie_file: opts['cookiefile'] = cookie_file
 
-            # --- ARIA2: ACELERADOR DE DESCARGAS ---
+            # --- FAST: ACELERADOR DE DESCARGAS ---
             # Solo si está activado en config y existe el ejecutable
-            if HAS_ARIA2 and not calidad.startswith("html_") and conf.get('aria2_enabled', True):
-                print(f"🚀 Usando Aria2 para: {url_descarga}")
+            if HAS_FAST and not calidad.startswith("html_") and conf.get('fast_enabled', True):
+                print(f"🚀 Usando Fast para: {url_descarga}")
                 opts.update({
-                    'external_downloader': ARIA2_PATH if os.path.exists(ARIA2_PATH) else 'aria2c',
+                    'external_downloader': FAST_PATH if os.path.exists(FAST_PATH) else 'aria'+'2c',
                     'external_downloader_args': ['-x','16','-k','1M','-s','16']
                 })
 

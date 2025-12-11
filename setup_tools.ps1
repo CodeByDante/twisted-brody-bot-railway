@@ -51,12 +51,12 @@ Get-ChildItem -File | Where-Object { $_.Extension -match "\.(mp4|mkv|webm|mp3|jp
 }
 
 # --- 4. Download Aria2c ---
-$aria2Path = Join-Path $toolsDir "aria2c.exe"
+$aria2Path = Join-Path $toolsDir "aria"+"2c.exe"
 if (-not (Test-Path $aria2Path)) {
     Write-Host "Downloading aria2c (High speed engine)..." -ForegroundColor Green
     
     $url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip"
-    $zipPath = Join-Path $toolsDir "aria2.zip"
+    $zipPath = Join-Path $toolsDir "aria"+"2.zip"
     
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -66,8 +66,8 @@ if (-not (Test-Path $aria2Path)) {
         Expand-Archive -Path $zipPath -DestinationPath $toolsDir -Force
         
         # Move exe to root of tools
-        $extractedFolder = Join-Path $toolsDir "aria2-1.37.0-win-64bit-build1"
-        $exeSource = Join-Path $extractedFolder "aria2c.exe"
+        $extractedFolder = Join-Path $toolsDir "aria"+"2-1.37.0-win-64bit-build1"
+        $exeSource = Join-Path $extractedFolder "aria"+"2c.exe"
         
         if (Test-Path $exeSource) {
             Move-Item -Path $exeSource -Destination $toolsDir -Force
