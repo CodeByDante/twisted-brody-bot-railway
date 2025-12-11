@@ -2,7 +2,9 @@ FROM python:3.10-slim
 
 # Instalar ffmpeg y dependencias del sistema
 # Instalar ffmpeg y utilidades
-RUN apt-get update && apt-get install -y ffmpeg curl wget
+# Instalar ffmpeg y utilidades + compiladores para tgcrypto
+RUN apt-get update && apt-get install -y ffmpeg curl wget build-essential python3-dev
+
 
 # N_m3u8DL-RE (Turbo) eliminado para evitar errores de build (404)
 # El bot usará yt-dlp nativo automáticamente.
