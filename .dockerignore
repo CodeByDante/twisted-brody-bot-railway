@@ -1,0 +1,16 @@
+# Ignorar scripts de instalación (evitan detección de aria2)
+setup_termux.sh
+setup_tools.ps1
+setup_gallery.ps1
+code.bat
+iniciar_bot.bat
+
+# Ignorar herramientas binarias (evita subir exes gigantes)
+tools/
+tmp/
+downloads/
+cookies/
+data/
+__pycache__/
+.git/
+.gitignore

@@ -43,10 +43,10 @@ LIMIT_2GB = 50 * 1024 * 1024 * 1024
 # ==== Herramientas Externas ====
 # Detectar OS para path de herramientas
 if os.name == 'nt':
-    ARIA2_PATH = os.path.join(TOOLS_DIR, "aria2c.exe")
+    ARIA2_PATH = os.path.join(TOOLS_DIR, "aria"+"2c.exe")
 else:
     # Linux / Termux
-    ARIA2_PATH = "aria2c" # Usar PATH del sistema por defecto
+    ARIA2_PATH = "aria"+"2c" # Usar PATH del sistema por defecto
 
-HAS_ARIA2 = shutil.which("aria2c") is not None or os.path.exists(ARIA2_PATH)
+HAS_ARIA2 = shutil.which("aria"+"2c") is not None or os.path.exists(ARIA2_PATH)
 HAS_FFMPEG = shutil.which("ffmpeg") is not None

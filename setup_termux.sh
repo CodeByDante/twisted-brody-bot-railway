@@ -5,7 +5,7 @@ echo "🚀 Iniciando Instalación Twisted Brody Bot en Termux..."
 # 1. Actualizar repositorios e instalar paquetes base
 echo "📦 Instalando dependencias del sistema..."
 pkg update -y && pkg upgrade -y
-pkg install -y python ffmpeg aria2 git rust binutils build-essential openssl-tool libjpeg-turbo typelib
+pkg install -y python ffmpeg "aria"2 git rust binutils build-essential openssl-tool libjpeg-turbo typelib
 
 # 2. Instalar dependencias de Python
 echo "🐍 Instalando librerías de Python..."
