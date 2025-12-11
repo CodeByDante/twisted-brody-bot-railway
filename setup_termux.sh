@@ -5,11 +5,14 @@ echo "🚀 Iniciando Instalación Twisted Brody Bot en Termux..."
 # 1. Actualizar repositorios e instalar paquetes base
 echo "📦 Instalando dependencias del sistema..."
 pkg update -y && pkg upgrade -y
-pkg install -y python ffmpeg aria2 git rust binutils build-essential openssl-tool
+pkg install -y python ffmpeg aria2 git rust binutils build-essential openssl-tool libjpeg-turbo typelib
 
 # 2. Instalar dependencias de Python
 echo "🐍 Instalando librerías de Python..."
+# Fix cryptg/tgcrypto build issues on Termux
+export CFLAGS="-Wno-deprecated-declarations -Wno-unreachable-code"
 pip install --upgrade pip
+pip install wheel
 pip install -r requirements.txt
 
 # 3. Configurar Gallery-DL para Termux (Aria2)

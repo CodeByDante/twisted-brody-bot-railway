@@ -4,7 +4,7 @@ import yt_dlp
 import time
 import re
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo, WebAppInfo, MenuButtonWebApp
 from config import API_ID, API_HASH, BOT_TOKEN, DATA_DIR, COOKIE_MAP
 from database import get_config, url_storage, hashtag_db, can_download, cancel_all
 from utils import format_bytes, limpiar_url, sel_cookie, resolver_url_facebook, descargar_galeria, scan_channel_history
@@ -31,9 +31,16 @@ def gen_kb(conf):
         ])
 
     # --- MODO IA (Exclusivo) ---
+    # --- MODO IA (Exclusivo) ---
     if conf.get('ai_mode'):
          return InlineKeyboardMarkup([
              [InlineKeyboardButton("🔙 Atrás (Salir Modo IA)", callback_data="menu|ai_off")]
+         ])
+
+    # --- MODO COMPRESS (Exclusivo) ---
+    if conf.get('compress_mode'):
+         return InlineKeyboardMarkup([
+             [InlineKeyboardButton("🔙 Atrás (Salir Modo Compresor)", callback_data="menu|compress_off")]
          ])
 
     c_html = "🟢" if conf['html_mode'] else "🔴"
@@ -67,7 +74,8 @@ def gen_kb(conf):
         
         [InlineKeyboardButton("✂️ Party (Cortador)", callback_data="menu|party_on"),
          InlineKeyboardButton("🤖 Modo IA", callback_data="menu|ai_on")],
-        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
+        [InlineKeyboardButton("🗜 Comprimir", callback_data="menu|compress_on"),
+         InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
     ])
     
     return InlineKeyboardMarkup(kb)
@@ -144,7 +152,8 @@ async def cb(c, q):
         txt_map = {
             'parts': "🧩 **¿En cuántas partes?**\nEnvía el número (ej: 2, 3...)",
             'min': "⏱ **¿Cada cuántos MINUTOS?**\nEnvía los minutos (ej: 10, 30...)",
-            'sec': "⏱ **¿Cada cuántos SEGUNDOS?**\nEnvía los segundos (ej: 30, 90...)"
+            'sec': "⏱ **¿Cada cuántos SEGUNDOS?**\nEnvía los segundos (ej: 30, 90...)",
+            'range': "✂️ **¿Qué rango cortar?**\nEnvía los tiempos Inicio y Fin.\n\nEjemplos:\n• `10 - 20` (segundos 10 a 20)\n• `01:00 - 01:30` (Minuto 1 a 1:30)\n• `10:00 a 10:30`"
         }
         await msg.edit_text(txt_map.get(mode, "Error."))
         return
@@ -161,6 +170,54 @@ async def cb(c, q):
         await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
         return
 
+    # --- HANDLERS MODO COMPRESS ---
+    elif data == "menu|compress_on":
+        conf['compress_mode'] = True
+        await msg.edit_text("🗜 **Modo Compresor Activo**\n\nEnvía un video y seleccionaremos cuánto comprimirlo.", reply_markup=gen_kb(conf))
+        return
+
+    elif data == "menu|compress_off":
+        conf['compress_mode'] = False
+        await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
+        return
+        
+    # --- SELECCION COMPRESION ---
+    elif "compress_sel" in data:
+        crf = int(data.split("|")[1])
+        cid = msg.chat.id
+        
+        st = url_storage.get(cid)
+        if not st or not st.get('file'): return await q.answer("❌ Error: No hay archivo.", show_alert=True)
+        
+        await msg.edit_text(f"⏳ **Comprimiendo video (CRF {crf})...**\nEsto puede tardar un poco según el peso.")
+        
+        fpath = st['file']
+        from utils import compress_video_ffmpeg, format_bytes
+        
+        comp_path = await asyncio.get_running_loop().run_in_executor(None, lambda: compress_video_ffmpeg(fpath, crf=crf))
+        
+        if comp_path:
+            sz_old = os.path.getsize(fpath)
+            sz_new = os.path.getsize(comp_path)
+            saving = sz_old - sz_new
+            pct = (saving / sz_old) * 100 if sz_old > 0 else 0
+            
+            cap = (f"🗜 **Compresión Finalizada**\n\n"
+                   f"📉 **Antes:** {format_bytes(sz_old)}\n"
+                   f"📈 **Ahora:** {format_bytes(sz_new)}\n"
+                   f"💰 **Ahorro:** {format_bytes(saving)} ({pct:.1f}%)")
+            
+            await c.send_video(cid, comp_path, caption=cap)
+            try: os.remove(comp_path)
+            except: pass
+        else:
+            await msg.edit_text("❌ **Error al comprimir.**")
+            
+        try: os.remove(fpath)
+        except: pass
+        url_storage.pop(cid, None)
+        return
+
     elif data == "menu|main": pass
     elif data == "start": pass # Para el botón de volver del start
 
@@ -168,6 +225,14 @@ async def cb(c, q):
 
 @app.on_message(filters.command("start"))
 async def start(c, m):
+    try:
+        await c.set_chat_menu_button(
+            chat_id=m.chat.id,
+            menu_button=MenuButtonWebApp(text="Open App", web_app=WebAppInfo(url="https://twisted-brody-manga-flow.vercel.app"))
+        )
+    except Exception as e:
+        print(f"⚠️ Error setting menu button: {e}")
+    
     await m.reply_text("⚙️ **Configuración Bot Pro**", reply_markup=gen_kb(get_config(m.chat.id)))
 
 @app.on_message(filters.command("menu"))
@@ -297,9 +362,15 @@ async def ai_text_handler(c, m):
         return
     # --------------------------------------------
 
-    await m.reply(resp, quote=True)
     # Evitar que otros handlers (como downloader) procesen el texto
     m.stop_propagation()
+
+# --- MANGA MINI APP HANDLER ---
+@app.on_message(filters.service & filters.create(lambda _, __, m: m.web_app_data is not None))
+async def web_app_data_handler(c, m):
+    print(f"📦 Recibido WebAppData: {m.web_app_data.data}")
+    from manga_service import handle_comic_request
+    await handle_comic_request(c, m, m.web_app_data.data)
 
 # --- PARTY MODE HANDLERS ---
 @app.on_message(filters.video | filters.document)
@@ -333,10 +404,51 @@ async def party_video_handler(c, m):
         [InlineKeyboardButton("⏱ Minutos", callback_data="party_sel|min"),
          InlineKeyboardButton("⏱ Segundos", callback_data="party_sel|sec")],
         [InlineKeyboardButton("🧩 Partes", callback_data="party_sel|parts")],
+        [InlineKeyboardButton("✂️ Rango (Manual)", callback_data="party_sel|range")],
         [InlineKeyboardButton("🔙 Cancelar", callback_data="menu|party_off")]
     ])
     
     await m.reply("✂️ **Modo Party: ¿Cómo quieres cortar?**", quote=True, reply_markup=kb)
+
+# --- COMPRESS MODE HANDLER ---
+@app.on_message(filters.video | filters.document)
+async def compress_video_handler(c, m):
+    cid = m.chat.id
+    conf = get_config(cid)
+    
+    # Check si estamos en modo compress y NO en party (por si acaso, aunque son excluyentes por UI)
+    if not conf.get('compress_mode'):
+        m.continue_propagation()
+        return
+
+    if m.document and m.document.mime_type and not m.document.mime_type.startswith("video"):
+         m.continue_propagation()
+         return 
+
+    wait = await m.reply("⬇️ **Descargando video para Comprimir...**", quote=True)
+    temp_dir = os.path.join(DATA_DIR, f"compress_{cid}")
+    if not os.path.exists(temp_dir): os.makedirs(temp_dir, exist_ok=True)
+    
+    # Usamos nombre seguro
+    fname = "input_video.mp4"
+    fpath = await c.download_media(m, file_name=os.path.join(temp_dir, fname))
+    await wait.delete()
+    
+    if not fpath:
+        await m.reply("❌ Error descargando.")
+        return
+
+    url_storage[cid] = {'compress_step': 'wait_sel', 'file': fpath}
+    
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📉 Ligero (CRF 23)", callback_data="compress_sel|23")],
+        [InlineKeyboardButton("⚖️ Medio (CRF 28)", callback_data="compress_sel|28")],
+        [InlineKeyboardButton("🪨 Fuerte (CRF 35)", callback_data="compress_sel|35")],
+        [InlineKeyboardButton("🔙 Cancelar", callback_data="menu|compress_off")]
+    ])
+    
+    await m.reply("🗜 **Video Recibido**\nSelecciona el nivel de compresión:\n\n*Nota: Mayor CRF = Menor peso, Menor calidad.*", quote=True, reply_markup=kb)
+    m.stop_propagation()
 
 @app.on_message(filters.text & ~filters.regex(r"^/"))
 async def party_text_handler(c, m):
@@ -355,11 +467,30 @@ async def party_text_handler(c, m):
     mode = st.get('mode', 'parts')
     
     try:
-        val = float(m.text.strip())
-        if val <= 0: raise ValueError
-        if mode == 'parts': val = int(val)
+        # Lógica especial para RANGE
+        if mode == 'range':
+            # Parser simple: busca dos grupos de tiempos
+            # Separadores comunes: "-", " a ", " to "
+            import re
+            txt = m.text.lower().replace(" a ", "-").replace(" to ", "-").strip()
+            # Split
+            parts_txt = txt.split("-")
+            if len(parts_txt) != 2: raise ValueError("Formato inválido")
+            
+            start_t = parts_txt[0].strip()
+            end_t = parts_txt[1].strip()
+            
+            # Simple check
+            if not start_t or not end_t: raise ValueError("Tiempos vacíos")
+            
+            val = (start_t, end_t) # Guardamos tupla
+            
+        else:
+            val = float(m.text.strip())
+            if val <= 0: raise ValueError
+            if mode == 'parts': val = int(val)
     except:
-        m.continue_propagation()
+        await m.reply(f"❌ **Formato Incorrecto**\nPara {mode} revisa el ejemplo.")
         return
 
     from utils import split_video_generic, get_video_metadata, format_bytes
@@ -372,10 +503,18 @@ async def party_text_handler(c, m):
          total_size = os.path.getsize(fpath)
          est = format_bytes(total_size / val)
          msg_txt += f"\n⚖️ **Peso estimado:** ~{est} c/u"
-
+    
     await m.reply(msg_txt)
     
-    parts = await asyncio.get_running_loop().run_in_executor(None, lambda: split_video_generic(fpath, mode, val))
+    # BRANCH LÓGICA
+    if mode == 'range':
+        from utils import cut_video_range
+        start_t, end_t = val
+        cut_path = await asyncio.get_running_loop().run_in_executor(None, lambda: cut_video_range(fpath, start_t, end_t))
+        
+        parts = [cut_path] if cut_path else []
+    else:
+        parts = await asyncio.get_running_loop().run_in_executor(None, lambda: split_video_generic(fpath, mode, val))
     
     if parts:
         await m.reply(f"✅ **Generadas {len(parts)} partes.** Subiendo...")

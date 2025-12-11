@@ -261,3 +261,85 @@ def get_video_metadata(path):
     except Exception as e:
         print(f"Meta Error: {e}")
         return 0, 0
+
+def compress_video_ffmpeg(input_path, crf=28, preset="fast"):
+    """
+    Comprime video usando FFmpeg + libx264.
+    crf: 0-51 (23=default, 28=whatsapp, 35=potato).
+    Retorna ruta del archivo comprimido o None si falla.
+    """
+    import subprocess
+    import os
+    
+    if not os.path.exists(input_path): return None
+    
+    base_dir = os.path.dirname(input_path)
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_path = os.path.join(base_dir, f"compressed_{base_name}.mp4")
+    
+    try:
+        # Comando FFmpeg simple
+        # -v error: menos spam
+        # -c:v libx264: codec video
+        # -crf: factor calidad
+        # -preset: velocidad
+        # -c:a copy: copiar audio sin tocar (más rápido)
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-c:v", "libx264", "-crf", str(crf), "-preset", preset,
+            "-c:a", "copy",
+            output_path
+        ]
+        
+        print(f"🗜 Iniciando compresión (CRF={crf}): {input_path}")
+        subprocess.run(cmd, check=True) # Check lanza error si falla
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error compresión: {e}")
+        return None
+
+def cut_video_range(input_path, start, end):
+    """
+    Corta un rango específico.
+    start/end: strings formato HH:MM:SS o MM:SS o segundos.
+    """
+    import subprocess
+    import os
+    
+    if not os.path.exists(input_path): return None
+    
+    base_dir = os.path.dirname(input_path)
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    
+    # Limpiar caracteres raros en tiempos para nombre archivo
+    s_safe = str(start).replace(":", "-")
+    e_safe = str(end).replace(":", "-")
+    output_path = os.path.join(base_dir, f"cut_{base_name}_{s_safe}_to_{e_safe}.mp4")
+    
+    try:
+        # Usamos -ss antes de -i para fast seek
+        # -to especifica el punto final (no duración)
+        # -c copy para velocidad máxima
+        cmd = [
+            "ffmpeg", "-y", 
+            "-ss", str(start),
+            "-to", str(end),
+            "-i", input_path,
+            "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
+            output_path
+        ]
+        
+        print(f"✂️ Cutting range {start} -> {end}")
+        subprocess.run(cmd, check=True)
+        
+        if os.path.exists(output_path):
+            return output_path
+        return None
+    except Exception as e:
+        print(f"❌ Cut Error: {e}")
+        return None
