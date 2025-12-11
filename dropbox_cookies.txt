@@ -1,0 +1,29 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+www.dropbox.com	FALSE	/	TRUE	1799460196	gvc	MjAxODM2MzUyMTYwOTc3NDg2MzIxNzMzNzEzMjQ5MjU4MzEyNzI3
+.dropbox.com	TRUE	/	FALSE	1799460196	locale	es
+www.dropbox.com	FALSE	/	TRUE	1765840273	billing_cycle	yearly
+.dropbox.com	TRUE	/	TRUE	1799968272	dbx_js_analytics_id	AABGBcUEUcL_mEX-CE_nxxnd1B0RXtPwfjFSBOIbfBMvXQ
+.dropbox.com	TRUE	/	FALSE	1773184277	_gcl_au	1.1.1422664327.1765408277
+.dropbox.com	TRUE	/	TRUE	1796944278	kn_cs_visitor_id	02bf7c3c-7ceb-49f8-ac7c-a520f031967d
+.dropbox.com	TRUE	/	FALSE	1799968340	_mkto_trk	id:077-ZJT-858&token:_mch-dropbox.com-44d0dfa92efc5665ef62332e2732f0a6
+.dropbox.com	TRUE	/	FALSE	1773184340	_fbp	fb.1.1765408278356.757005048753327392
+.dropbox.com	TRUE	/	FALSE	1796944279	_yjsu_yjad	1765408279.7e081833-5262-4456-b3ce-64410951a29f
+www.dropbox.com	FALSE	/	FALSE	1780960312	g_state	{"i_l":0,"i_ll":1765408278697}
+.dropbox.com	TRUE	/	TRUE	1796944295	_iidt	RpxohPOtQZVfmrphyRZfE08/MP7S8PYt4kcI+j2DZJOyaqF9vJs8otARRn8pADP7UkWbMn0X/uiJNQ==
+.dropbox.com	TRUE	/	FALSE	1796944294	_vid_t	yn65lGCy7iDt5WHYM4dwC2mwpg6V98sq+53v9EQLMpa8VnH0wX33WWpVAMa7oFViIC5W3bh27uPg/Q==
+.dropbox.com	TRUE	/	TRUE	1781133112	__Secure-dbx_consent	{"consentType":1,"consentDate":"2025-12-10T23:11:52.616Z","expireDate":"2026-06-10T23:11:52.616Z","consentMonths":6,"categories":{"strictly necessary":true,"general marketing and advertising":true,"analytics":true,"performance and functionality":true,"social media advertising":true},"userInteracted":true,"numDots":1}
+.www.dropbox.com	TRUE	/	TRUE	1796944314	jar	W3sidWlkIjogMTk5MzkyMzk4NywgIm5zIjogMTMzNzQyNDc0NzUsICJyZW1lbWJlciI6IHRydWUsICJleHBpcmVzIjogMTc5Njk0NDMxMywgImgiOiAiIn1d
+.dropbox.com	TRUE	/	TRUE	1796944314	db-help-center-uid	ZXlKMllXeDFaU0k2SUhzaWRXbGtJam9nTVRrNU16a3lNems0TjMwc0lDSnphV2R1WVhSMWNtVWlPaUFpUVVGRk9VZHdTRVp6U2xsdU4wUmhZMkpDTkdKUE5ESjJRa0ZOT1c5eVQzWTJOMTgwYzI5clRsVmpUVWxoWnlKOQ%3D%3D
+.www.dropbox.com	TRUE	/	TRUE	0	preauth	
+.dropbox.com	TRUE	/	TRUE	1796944314	t	1dPj5jCWk3jFLq-GNGffWbr5
+www.dropbox.com	FALSE	/	TRUE	1796944314	__Host-js_csrf	1dPj5jCWk3jFLq-GNGffWbr5
+www.dropbox.com	FALSE	/	TRUE	1796944314	__Host-ss	JOzXv8oBnM
+.www.dropbox.com	TRUE	/	TRUE	1796944314	lid	AAFqmsRNR7W1KW8ML4gNeteXdT4NO2_G92N1s4zhRu6DGA
+.dropbox.com	TRUE	/	TRUE	1796944314	bjar	W3sidWlkIjogMTk5MzkyMzk4NywgInNlc3NfaWQiOiAxNTkyNjMwODUzNzc4MDcxNTgxNzc0MDU1Mjg4NDQ2OTU1NjcyOSwgInJvbGUiOiAicGVyc29uYWwiLCAidGVhbV9pZCI6ICIiLCAiZXhwaXJlcyI6IDE3OTY5NDQzMTMsICJ1c2VyX2dpZCI6ICJBQjFMbFhQTi14ZmtRM2lfY0tYTHRJMnoifV0%3D
+.dropbox.com	TRUE	/	TRUE	1796944314	blid	AAGOisCBxCJXYIejZiBI5-JfsxLzBc--GNOOToRXL9TNFw
+.dropbox.com	TRUE	/	TRUE	1796944343	last_active_role	personal
+.dropbox.com	TRUE	/	TRUE	1796944343	last_active_linked_user_id	8a5689cd
+.dropbox.com	TRUE	/	TRUE	1773184339	_rdt_uuid	1765408277913.72676da7-84f8-4ca9-ba22-b0726d3e61e3

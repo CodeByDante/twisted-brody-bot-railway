@@ -1,0 +1,8 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.javxxx.me	TRUE	/	FALSE	1798246064	_ga	GA1.1.1063518609.1763606476
+.javxxx.me	TRUE	/	FALSE	1798210292	_ga_EPCC3CFKF2	GS2.1.s1763650002$o2$g0$t1763650291$j60$l0$h0
+.javxxx.me	TRUE	/	FALSE	0	_scribe	true
+.javxxx.me	TRUE	/	FALSE	1798246068	_ga_EZBDQDPWR3	GS2.1.s1763685772$o4$g1$t1763686067$j51$l0$h0
