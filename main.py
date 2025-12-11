@@ -112,7 +112,7 @@ async def cb(c, q):
 
     await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
 
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command(["start", "inicio"]))
 async def start(c, m):
     await m.reply_text("⚙️ **Configuración Bot Pro**", reply_markup=gen_kb(get_config(m.chat.id)))
 
@@ -178,7 +178,7 @@ async def hashtag_replay_handler(c, m):
     tag = m.matches[0].group(1).lower()
     
     # 1. PRIMERO: Ignorar comandos reservados (debe pasar a sus handlers específicos)
-    if tag in ['start', 'menu', 'scan', 'help', 'settings', 'dl']:
+    if tag in ['start', 'inicio', 'menu', 'scan', 'help', 'settings', 'dl', 'cancel']:
         return
     
     # 2. Verificar si está habilitado
@@ -588,6 +588,7 @@ if __name__ == "__main__":
         try:
             await app.set_bot_commands([
                 BotCommand("start", "⚙️ Configuración y Estado"),
+                BotCommand("inicio", "🚀 Reiniciar Panel (Alias)"),
                 BotCommand("menu", "📖 Guía de Ayuda y Funciones"),
                 BotCommand("scan", "🔄 Escanear Canal (Admin)"),
                 BotCommand("cancel", "🛑 Cancelar descargas activas")
