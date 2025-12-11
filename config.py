@@ -42,7 +42,6 @@ LIMIT_2GB = 50 * 1024 * 1024 * 1024
 
 # ==== Herramientas Externas ====
 # Detectar OS para path de herramientas
-if os.name == 'nt':
 # fast_tool path
 if os.name == 'nt':
     FAST_PATH = os.path.join(TOOLS_DIR, "aria"+"2c.exe")
