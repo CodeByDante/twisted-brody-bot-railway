@@ -1,6 +1,6 @@
 pyrogram
 tgcrypto
-yt-dlp
+yt-dlp @ git+https://github.com/yt-dlp/yt-dlp.git@master
 deep-translator
 aiohttp
 requests

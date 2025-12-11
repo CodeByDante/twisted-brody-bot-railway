@@ -26,7 +26,7 @@ COOKIE_MAP = {
     "tiktok": os.path.join(COOKIES_DIR, "cookies_tiktok.txt"),
     "pornhub": os.path.join(COOKIES_DIR, "cookies_pornhub.txt"),
     "xvideos": os.path.join(COOKIES_DIR, "cookies_xvideos.txt"),
-    "twitter": os.path.join(COOKIES_DIR, "cookies_twitter.txt"),
+    "twitter": os.path.join(COOKIES_DIR, "cookies_x.txt"),
     "x.com": os.path.join(COOKIES_DIR, "cookies_x.txt"),
     "jav": os.path.join(COOKIES_DIR, "cookies_jav.txt"),
     "missav": os.path.join(COOKIES_DIR, "cookies_jav.txt"),
