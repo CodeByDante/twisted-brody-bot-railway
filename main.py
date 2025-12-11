@@ -6,7 +6,7 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo
 from config import API_ID, API_HASH, BOT_TOKEN
-from database import get_config, url_storage, hashtag_db
+from database import get_config, url_storage, hashtag_db, can_download, cancel_all
 from utils import format_bytes, limpiar_url, sel_cookie, resolver_url_facebook, descargar_galeria, scan_channel_history
 import shutil
 import os # Asegurar os
@@ -164,18 +164,27 @@ async def scan_command(c, m):
     except Exception as e:
         await msg.edit(f"❌ Error escaneando: {e}")
 
+@app.on_message(filters.command("cancel"))
+async def cancel_command(c, m):
+    count = await cancel_all(m.chat.id)
+    url_storage.pop(m.chat.id, None)
+    if count > 0:
+        await m.reply(f"🛑 **Se cancelaron {count} descargas activas.**\nCola limpia.")
+    else:
+        await m.reply("🤷‍♂️ No tienes descargas activas.")
+
 @app.on_message(filters.regex(r"^/(\w+)"))
 async def hashtag_replay_handler(c, m):
     tag = m.matches[0].group(1).lower()
+    
+    # 1. PRIMERO: Ignorar comandos reservados (debe pasar a sus handlers específicos)
+    if tag in ['start', 'menu', 'scan', 'help', 'settings', 'dl']:
+        return
+    
+    # 2. Verificar si está habilitado
     cid = m.chat.id
     conf = get_config(cid)
-    
-    # 1. Verificar si está habilitado
     if not conf.get('replay_enabled'):
-        return
-
-    # 2. Ignorar comandos reservados
-    if tag in ['start', 'menu', 'scan', 'help', 'settings', 'dl']:
         return
 
     # 3. Buscar en DB
@@ -216,6 +225,13 @@ async def hashtag_replay_handler(c, m):
 @app.on_message(filters.text & (filters.regex("http") | filters.regex("www")))
 async def analyze(c, m):
     cid = m.chat.id
+    
+    # --- ANTI-SPAM CHECK ---
+    ok, err = can_download(cid)
+    if not ok:
+        return await m.reply(err, quote=True)
+    # -----------------------
+
     # Clean previous data to prevent mix-ups
     url_storage.pop(cid, None)
     
@@ -573,7 +589,8 @@ if __name__ == "__main__":
             await app.set_bot_commands([
                 BotCommand("start", "⚙️ Configuración y Estado"),
                 BotCommand("menu", "📖 Guía de Ayuda y Funciones"),
-                BotCommand("scan", "🔄 Escanear Canal (Admin)")
+                BotCommand("scan", "🔄 Escanear Canal (Admin)"),
+                BotCommand("cancel", "🛑 Cancelar descargas activas")
             ])
             print("✅ Comandos registrados con éxito.")
         except Exception as e:

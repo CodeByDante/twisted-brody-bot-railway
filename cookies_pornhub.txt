@@ -27,4 +27,3 @@ pornhub.com	FALSE	/	FALSE	0	accessAgeDisclaimerPH	1
 pornhub.com	FALSE	/	FALSE	0	accessAgeDisclaimerUK	1
 pornhub.com	FALSE	/	FALSE	0	accessPH	1
 pornhub.com	FALSE	/	FALSE	0	platform	pc
-.phncdn.com	TRUE	/	TRUE	1765409838	__cf_bm	j7RsDW.Pjx9vFTEWWV_0jrHpG.d38Vbi38wSWcR_c1o-1765408038-1.0.1.1-Qz7ceNM9CeQ67rHeit.xZRqthaBBwUa2kS2mbwqb7JG4iAF3teHYVly0LWh0zog5BXb1AWuRoNrz7uI8rb.w.rRcF7P0X2B9yHtnHcD3Zps

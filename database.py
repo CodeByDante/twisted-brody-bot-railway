@@ -9,6 +9,8 @@ url_storage = {}    # <-- Esta es la variable que te faltaba
 user_config = {}    
 downloads_db = {}   
 hashtag_db = {}     # <-- Base de datos de hashtags
+active_downloads = {} # {chat_id: {msg_id: future/task}}
+user_cooldowns = {}   # {chat_id: timestamp}
 
 # --- FUNCIONES ---
 
@@ -58,6 +60,45 @@ def get_config(chat_id):
             'replay_enabled': False # <--- Nuevo modo replay
         }
     return user_config[chat_id]
+
+def can_download(chat_id, max_concurrent=3, cooldown_sec=2):
+    import time
+    
+    # 1. Check Cooldown
+    last_time = user_cooldowns.get(chat_id, 0)
+    if time.time() - last_time < cooldown_sec:
+        return False, f"⏳ Espera {cooldown_sec}s entre comandos."
+    
+    user_cooldowns[chat_id] = time.time()
+    
+    # 2. Check Concurrent Limits
+    current_active = len(active_downloads.get(chat_id, {}))
+    if current_active >= max_concurrent:
+        return False, f"⚠️ Límite de descargas activas ({max_concurrent}) alcanzado."
+        
+    return True, None
+
+def add_active(chat_id, msg_id, task=None):
+    if chat_id not in active_downloads:
+        active_downloads[chat_id] = {}
+    active_downloads[chat_id][msg_id] = task
+
+def remove_active(chat_id, msg_id):
+    if chat_id in active_downloads and msg_id in active_downloads[chat_id]:
+        del active_downloads[chat_id][msg_id]
+        if not active_downloads[chat_id]:
+            del active_downloads[chat_id]
+
+async def cancel_all(chat_id):
+    if chat_id in active_downloads:
+        tasks = active_downloads[chat_id]
+        count = len(tasks)
+        for mid, task in tasks.items():
+            if task and not task.done():
+                task.cancel()
+        active_downloads.pop(chat_id, None)
+        return count
+    return 0
 
 # Cargar base de datos al iniciar
 cargar_db()

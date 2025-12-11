@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pyrogram import enums
 from config import LIMIT_2GB, HAS_ARIA2
-from database import get_config, downloads_db, guardar_db
+from database import get_config, downloads_db, guardar_db, add_active, remove_active
 from utils import sel_cookie, traducir_texto
 from tools_media import get_thumb, get_meta, get_audio_dur, progreso
 
@@ -64,6 +64,10 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             return
         except Exception as e:
             print(f"⚠️ Cache inválido (Archivo borrado?): {e}")
+
+    # Register Task for Anti-Spam / Cancellation
+    curr_task = asyncio.current_task()
+    add_active(chat_id, msg_orig.id, curr_task)
 
     try:
         # Variables de control de progreso
@@ -401,6 +405,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
         print(f"Excepción: {e}")
         if status: await status.edit(f"❌ Error: {e}")
     finally:
+        remove_active(chat_id, msg_orig.id) # Cleanup Anti-Spam
         for f in [final, thumb, f"dl_{chat_id}_{ts}.jpg"]:
             if f and os.path.exists(f):
                 try: os.remove(f)
