@@ -102,7 +102,8 @@ async def cb(c, q):
         # Limpiar RAM antes de descargar, ya tenemos los datos en d_storage
         url_storage.pop(cid, None)
         
-                'fast_enabled': conf.get('fast_enabled', True) # IMPORTANTE: Pasar estado de Fast
+        # Pasamos estado de fast
+        d_storage['fast_enabled'] = conf.get('fast_enabled', True)
         
         asyncio.create_task(procesar_descarga(c, cid, url_target, data.split("|")[1], d_storage, msg))
         return
