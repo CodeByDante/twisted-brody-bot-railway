@@ -115,7 +115,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
         # 3. No es una descarga de audio MP3.
         usar_turbo = HAS_RE and ".m3u8" in url_descarga and calidad != "mp3"
 
-        engine_name = "Nativo (Lento)"
+        engine_name = "Nativo (Estándar)"
         if usar_turbo: 
             engine_name = "Turbo (N_m3u8DL-RE)"
         elif HAS_ARIA2 and not calidad.startswith("html_") and conf.get('aria2_enabled', True):
