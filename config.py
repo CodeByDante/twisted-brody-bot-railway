@@ -15,7 +15,7 @@ for d in [COOKIES_DIR, DATA_DIR, DOWNLOAD_DIR, TOOLS_DIR]:
 # ==== Bot credentials (replace with your own) ====
 API_ID = 33226415
 API_HASH = "01999dae3e5348c7ab0dbcc6f7f4edc5"
-BOT_TOKEN = "8584312169:AAHQjPutXzS6sCPQ-NxIKp_5GsmjmvI9TEw"
+BOT_TOKEN = "8217142169:AAFbT5hCtBqO_n8DkX5-RkhOvRsLNM3fEwY"
 GEMINI_API_KEY = "AIzaSyCVIbMfcOuhr51iZ5wKGl7y7gBfm-cm63s"
 
 # ==== Cookie map ====
