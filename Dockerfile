@@ -3,7 +3,7 @@ FROM python:3.10-slim
 # Instalar ffmpeg y dependencias del sistema
 # Instalar ffmpeg y utilidades
 # Instalar ffmpeg y utilidades + compiladores para tgcrypto
-RUN apt-get update && apt-get install -y ffmpeg curl wget build-essential python3-dev
+RUN apt-get update && apt-get install -y ffmpeg curl wget build-essential python3-dev git
 
 
 # N_m3u8DL-RE (Turbo) eliminado para evitar errores de build (404)
