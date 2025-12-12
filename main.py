@@ -206,7 +206,10 @@ async def cb(c, q):
             
             # Ejecutar en background task
             # Pasamos container y fmt a la función
-            asyncio.create_task(process_manga_download(c, cid, manga_data, container, fmt, status_msg))
+            asyncio.create_task(process_manga_download(
+                c, cid, manga_data, container, fmt, status_msg, 
+                doc_mode=conf.get('doc_mode', False)
+            ))
             return
     
     elif data == "manga_back":
@@ -220,6 +223,7 @@ async def cb(c, q):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
              InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img|original")],
             [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
         ])
         
@@ -538,6 +542,7 @@ async def analyze(c, m):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
              InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img|original")],
             [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
         ])
         

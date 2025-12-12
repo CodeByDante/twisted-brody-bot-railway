@@ -112,7 +112,7 @@ async def download_image(session, url):
     except: pass
     return None
 
-async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg):
+async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg, doc_mode=False):
     """
     Descarga, procesa y envía el manga.
     container: 'zip' o 'pdf'
@@ -196,6 +196,48 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                         if new_path != safe_path: os.remove(safe_path)
                     except Exception as e:
                         print(f"Error converting {file}: {e}")
+
+        # 4. Empaquetado o Envío Directo
+        if container == 'img':
+            await status_msg.edit(f"📤 **{title}**\nEnviando {total} imágenes...")
+            from pyrogram.types import InputMediaPhoto, InputMediaDocument
+            
+            # Recolectar todos los archivos finales ordenados
+            all_files = []
+            for ch in chapters:
+                ch_safe = "".join([c for c in ch['title'] if c.isalnum() or c in " -_"]).strip()
+                ch_dir = os.path.join(base_tmp, ch_safe)
+                if not os.path.exists(ch_dir): continue
+                imgs = sorted(os.listdir(ch_dir))
+                for im in imgs:
+                    all_files.append(os.path.join(ch_dir, im))
+
+            if not all_files:
+                return await status_msg.edit("❌ Error: No se descargaron imágenes.")
+            
+            if doc_mode:
+                # Enviar como documentos
+                for i in range(0, len(all_files), 10):
+                    chunk = all_files[i:i+10]
+                    media = [InputMediaDocument(f) for f in chunk]
+                    try:
+                        await client.send_media_group(chat_id, media)
+                        await asyncio.sleep(2)
+                    except Exception as e:
+                         pass
+            else:
+                # Enviar como Álbum (Fotos)
+                for i in range(0, len(all_files), 10):
+                    chunk = all_files[i:i+10]
+                    media = [InputMediaPhoto(f) for f in chunk]
+                    try:
+                        await client.send_media_group(chat_id, media)
+                        await asyncio.sleep(2)
+                    except Exception as e:
+                        pass
+                        
+            await status_msg.delete()
+            return
 
         # 4. Empaquetado (ZIP o PDF)
         await status_msg.edit(f"⏳ **{title}**\n📦 Creando archivo {container.upper()}...")
