@@ -62,8 +62,11 @@ def sel_cookie(url):
 async def traducir_texto(texto):
     if not texto: return ""
     try:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: GoogleTranslator(source='auto', target='es').translate(texto))
-    except: return texto
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return texto
 
 # Ruta a gallery-dl
 # Prioridad: 1. Pip Install (Latest) | 2. Tools Local (Portable) | 3. System Path
