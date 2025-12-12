@@ -182,18 +182,35 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                     except: pass
         
         # 3. Conversión de Formato (si aplica)
-        if quality in ['png', 'jpg']:
-            await status_msg.edit(f"⏳ **{title}**\n⚙️ Convirtiendo a {quality.upper()}...")
+        # 3. Conversión de Formato (si aplica)
+        # Fix: img2pdf no soporta WebP. Telegram send_photo no soporta WebP con Alpha (a veces).
+        # Si es PDF o IMG (Photo Mode) con WebP, forzamos conversión a JPG.
+        force_jpg_for_pdf = (container == 'pdf')
+        force_jpg_for_photo = (container == 'img' and not doc_mode and quality == 'webp')
+        
+        should_convert = quality in ['png', 'jpg'] or force_jpg_for_pdf or force_jpg_for_photo
+        
+        if should_convert:
+            target_ext = f".{quality}" if quality in ['png', 'jpg'] else ".jpg"
+            
+            if force_jpg_for_pdf: 
+                 await status_msg.edit(f"⏳ **{title}**\n⚙️ PDF: Convirtiendo imágenes a JPG compatible...")
+            elif force_jpg_for_photo:
+                 await status_msg.edit(f"⏳ **{title}**\n⚙️ IMG: Optimizando imágenes para envío rápido...")
+            else:
+                 await status_msg.edit(f"⏳ **{title}**\n⚙️ Convirtiendo a {quality.upper()}...")
+
             for root, _, files in os.walk(base_tmp):
                 for file in files:
                     safe_path = os.path.join(root, file)
                     try:
+                        fname, cur_ext = os.path.splitext(file)
+                        if cur_ext.lower() == target_ext: continue
+
                         with Image.open(safe_path) as im:
                             rgb_im = im.convert('RGB')
-                            new_ext = f".{quality}"
-                            base_w = os.path.splitext(safe_path)[0]
-                            new_path = base_w + new_ext
-                            rgb_im.save(new_path, quality=95 if quality == 'jpg' else None)
+                            new_path = os.path.join(root, fname + target_ext)
+                            rgb_im.save(new_path, quality=95)
                         
                         if new_path != safe_path: os.remove(safe_path)
                     except Exception as e:
