@@ -70,8 +70,7 @@ def gen_kb(conf):
         [InlineKeyboardButton(f"🌐 Idioma: {lang_flag}", callback_data="toggle|lang")],
         
         [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")],
-        # --- NEW BUTTON ---
-        [InlineKeyboardButton("📚 Twisted Brody Manga Flow", callback_data="catalog|home")]
+        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
     ])
     
     return InlineKeyboardMarkup(kb)
