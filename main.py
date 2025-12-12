@@ -15,7 +15,7 @@ from jav_extractor import extraer_jav_directo
 # Sniffer Manual (Playwright - Solo si se activa botón)
 # from sniffer import detectar_video_real # Eliminado 
 from downloader import procesar_descarga
-from manga_service import get_manga_metadata, process_manga_download
+from manga_service import get_manga_metadata, process_manga_download, get_manga_chapters
 
 print("🚀 Iniciando Bot Pro (JAV Turbo + FB Fix + Auto-Swap)...")
 
