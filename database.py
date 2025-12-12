@@ -2,6 +2,7 @@ import json
 import os
 from config import DB_FILE, DATA_DIR
 
+DB_CACHE = os.path.join(DATA_DIR, "manga_cache.json")
 DB_TAGS = os.path.join(DATA_DIR, "hashtags.json")
 
 # --- VARIABLES GLOBALES (NO BORRAR) ---
@@ -9,24 +10,39 @@ url_storage = {}    # <-- Esta es la variable que te faltaba
 user_config = {}    
 downloads_db = {}   
 hashtag_db = {}     # <-- Base de datos de hashtags
+manga_cache = {}    # <-- Cache de mangas (file_ids)
 active_downloads = {} # {chat_id: {msg_id: future/task}}
 user_cooldowns = {}   # {chat_id: timestamp}
 
 # --- FUNCIONES ---
 
 def cargar_db():
-    global downloads_db
+    global downloads_db, manga_cache
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r') as f:
                 downloads_db.update(json.load(f))
         except:
             downloads_db = {}
+    
+    if os.path.exists(DB_CACHE):
+        try:
+            with open(DB_CACHE, 'r') as f:
+                manga_cache.update(json.load(f))
+        except:
+            manga_cache = {}
 
 def guardar_db():
     try:
         with open(DB_FILE, 'w') as f:
             json.dump(downloads_db, f, indent=4)
+    except:
+        pass
+
+def save_manga_cache():
+    try:
+        with open(DB_CACHE, 'w') as f:
+            json.dump(manga_cache, f, indent=4)
     except:
         pass
 

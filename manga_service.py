@@ -113,6 +113,7 @@ async def download_image(session, url):
     except: pass
     return None
 
+from database import manga_cache, save_manga_cache
 from pyrogram.types import InputMediaPhoto, InputMediaDocument
 from pyrogram.errors import FloodWait
 
@@ -125,6 +126,85 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     manga_id = manga_data['id']
     title = manga_data['title']
     
+    # --- CACHE CHECK ---
+    cache_key = f"{manga_id}|{container}|{quality}|{doc_mode}"
+    
+    if cache_key in manga_cache:
+        cached_data = manga_cache[cache_key]
+        found_in_cache = False
+        
+        try:
+            if container in ['zip', 'pdf']:
+                # cached_data should be a single file_id string
+                if isinstance(cached_data, str):
+                    await status_msg.edit(f"🚀 **{title}**\nEnviando desde caché...")
+                    cap = f"📚 **{title}**\n👤 {manga_data['author']}\n📦 {container.upper()} | 🎨 {quality.upper()}"
+                    await client.send_document(chat_id, cached_data, caption=cap)
+                    await status_msg.delete()
+                    return
+            
+            elif container == 'img':
+                # cached_data should be a list of file_ids
+                if isinstance(cached_data, list) and len(cached_data) > 0:
+                    await status_msg.edit(f"🚀 **{title}**\nEnviando {len(cached_data)} imágenes desde caché...")
+                    
+                    if not group_mode:
+                        # ENVIAR 1 a 1 (Cache)
+                        for idx, fid in enumerate(cached_data):
+                            if idx % 10 == 0:
+                                try: await status_msg.edit(f"📤 **Enviando (Cache)...** {idx+1}/{len(cached_data)}")
+                                except: pass
+                            try:
+                                if doc_mode: await client.send_document(chat_id, fid)
+                                else: await client.send_photo(chat_id, fid)
+                                await asyncio.sleep(0.3)
+                            except FloodWait as e:
+                                await asyncio.sleep(e.value + 1)
+                                if doc_mode: await client.send_document(chat_id, fid)
+                                else: await client.send_photo(chat_id, fid)
+                            except Exception as e:
+                                print(f"Error sending cached img {fid}: {e}")
+                    else:
+                        # ENVIAR AGRUPADO (Cache)
+                        async def send_group_safe_cache(media_group):
+                            while True:
+                                try:
+                                    await client.send_media_group(chat_id, media_group)
+                                    return
+                                except FloodWait as e:
+                                    await asyncio.sleep(e.value + 1)
+                                except Exception:
+                                    return 
+
+                        if doc_mode:
+                            for i in range(0, len(cached_data), 10):
+                                chunk = cached_data[i:i+10]
+                                media = [InputMediaDocument(fid) for fid in chunk]
+                                await send_group_safe_cache(media)
+                                await asyncio.sleep(1.2)
+                        else:
+                            for i in range(0, len(cached_data), 10):
+                                chunk = cached_data[i:i+10]
+                                media = [InputMediaPhoto(fid) for fid in chunk]
+                                try:
+                                    await client.send_media_group(chat_id, media)
+                                    await asyncio.sleep(1.2)
+                                except FloodWait as e:
+                                    await asyncio.sleep(e.value + 1)
+                                    try: await client.send_media_group(chat_id, media)
+                                    except: pass
+                                except Exception: pass
+                    
+                    await status_msg.delete()
+                    return
+
+        except Exception as e:
+            print(f"❌ Cache hit but failed to send: {e}. Falling back to download.")
+            # Si falla el cache (e.g. file_id inválido), procedemos a descargar normal
+            pass
+            
+    # --- END CACHE CHECK ---
+
     # Crear directorio temporal único
     import time
     timestamp = int(time.time())
@@ -182,7 +262,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                     except: pass
         
         # 3. Conversión de Formato (si aplica)
-        # 3. Conversión de Formato (si aplica)
         # Fix: img2pdf no soporta WebP. Telegram send_photo no soporta WebP con Alpha (a veces).
         # Si es PDF o IMG (Photo Mode) con WebP, forzamos conversión a JPG.
         force_jpg_for_pdf = (container == 'pdf')
@@ -233,6 +312,9 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             if not all_files:
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
+            # Lista para guardar file_ids para el cache
+            sent_file_ids = []
+
             if not group_mode:
                 # ENVIAR 1 a 1 (Individual) - MODO VELOZ
                 for idx, f in enumerate(all_files):
@@ -243,10 +325,17 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                     sent = False
                     while not sent:
                         try:
+                            msg = None
                             if doc_mode:
-                                await client.send_document(chat_id, f)
+                                msg = await client.send_document(chat_id, f)
                             else:
-                                await client.send_photo(chat_id, f)
+                                msg = await client.send_photo(chat_id, f)
+                            
+                            # Validar y guardar ID
+                            if msg:
+                                if doc_mode and msg.document: sent_file_ids.append(msg.document.file_id)
+                                elif msg.photo: sent_file_ids.append(msg.photo.file_id)
+
                             sent = True
                             await asyncio.sleep(0.5) # Sleep reducido (0.5s)
                         except FloodWait as e:
@@ -258,37 +347,54 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                         
             else:
                 # ENVIAR AGRUPADO (ALBUM / BATCH) - MODO VELOZ
-                # Definir función helper para reintentos
-                async def send_group_safe(media_group):
+                async def send_group_safe_capture(media_group):
+                    """Sends media group and returns the sent messages for ID capture"""
                     while True:
                         try:
-                            await client.send_media_group(chat_id, media_group)
-                            return
+                            msgs = await client.send_media_group(chat_id, media_group)
+                            return msgs
                         except FloodWait as e:
                             print(f"⏳ FloodWait Group: {e.value}s")
                             await asyncio.sleep(e.value + 1)
                         except Exception:
-                            return # Skip on other errors
+                            return None
 
                 if doc_mode:
                     for i in range(0, len(all_files), 10):
                         chunk = all_files[i:i+10]
                         media = [InputMediaDocument(f) for f in chunk]
-                        await send_group_safe(media)
-                        await asyncio.sleep(1.5) # Sleep reducido (1.5s)
+                        msgs = await send_group_safe_capture(media)
+                        
+                        if msgs:
+                            for m in msgs:
+                                if m.document: sent_file_ids.append(m.document.file_id)
+                        
+                        await asyncio.sleep(1.5)
                 else:
                     for i in range(0, len(all_files), 10):
                         chunk = all_files[i:i+10]
                         media = [InputMediaPhoto(f) for f in chunk]
+                        
+                        msgs = None # Reset
                         try:
-                            await client.send_media_group(chat_id, media)
+                            msgs = await client.send_media_group(chat_id, media)
                             await asyncio.sleep(1.5)
                         except FloodWait as e:
                              await asyncio.sleep(e.value + 1)
-                             try: await client.send_media_group(chat_id, media)
+                             try: msgs = await client.send_media_group(chat_id, media)
                              except: pass
                         except Exception as e: pass
                         
+                        if msgs:
+                             for m in msgs:
+                                 if m.photo: sent_file_ids.append(m.photo.file_id)
+                                 elif m.document: sent_file_ids.append(m.document.file_id) # Just in case
+
+            # --- SAVE IMG CACHE ---
+            if sent_file_ids:
+                manga_cache[cache_key] = sent_file_ids
+                save_manga_cache()
+            
             await status_msg.delete()
             return
 
@@ -331,7 +437,12 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             await status_msg.edit(f"📤 **{title}**\nSubiendo archivo ({os.path.getsize(final_file)/1024/1024:.1f} MB)...")
             
             cap = f"📚 **{title}**\n👤 {manga_data['author']}\n📦 {container.upper()} | 🎨 {quality.upper()}"
-            await client.send_document(chat_id, final_file, caption=cap)
+            msg = await client.send_document(chat_id, final_file, caption=cap)
+            
+            # --- SAVE ZIP/PDF CACHE ---
+            if msg and msg.document:
+                manga_cache[cache_key] = msg.document.file_id
+                save_manga_cache()
             
             try: os.remove(final_file)
             except: pass
