@@ -297,6 +297,11 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         else:
             await status_msg.edit("❌ Error al crear el archivo final.")
 
+    except asyncio.CancelledError:
+        print(f"🛑 Descarga Cancelada: {title}")
+        await status_msg.edit("🛑 **Descarga Cancelada.**")
+        raise # Relaunch para que asyncio sepa que fue cancelada
+
     except Exception as e:
         print(f"❌ Error Proceso: {e}")
         await status_msg.edit(f"❌ Error crítico: {e}")

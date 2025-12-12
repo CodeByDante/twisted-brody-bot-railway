@@ -6,7 +6,7 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo, WebAppInfo, MenuButtonWebApp
 from config import API_ID, API_HASH, BOT_TOKEN, DATA_DIR, COOKIE_MAP
-from database import get_config, url_storage, hashtag_db, can_download, cancel_all
+from database import get_config, url_storage, hashtag_db, can_download, cancel_all, add_active, remove_active
 from utils import format_bytes, limpiar_url, sel_cookie, resolver_url_facebook, descargar_galeria, scan_channel_history
 import shutil
 import os # Asegurar os
@@ -215,11 +215,13 @@ async def cb(c, q):
             
             # Ejecutar en background task
             # Pasamos container y fmt a la función
-            asyncio.create_task(process_manga_download(
+            task = asyncio.create_task(process_manga_download(
                 c, cid, manga_data, container, fmt, status_msg, 
                 doc_mode=conf.get('doc_mode', False),
                 group_mode=conf.get('group_mode', True)
             ))
+            add_active(cid, status_msg.id, task)
+            task.add_done_callback(lambda t: remove_active(cid, status_msg.id))
             return
     
     elif data == "manga_back":
@@ -557,11 +559,13 @@ async def analyze(c, m):
         # Si Auto = Max, descargamos ZIP Original directo
         if conf.get('q_auto') == 'max':
              status_msg = await c.send_message(cid, f"⚙️ **Auto-Max detectado:** Iniciando descarga ZIP Original...")
-             asyncio.create_task(process_manga_download(
+             task = asyncio.create_task(process_manga_download(
                 c, cid, meta, 'zip', 'original', status_msg, 
                 doc_mode=conf.get('doc_mode', False),
                 group_mode=conf.get('group_mode', True)
              ))
+             add_active(cid, status_msg.id, task)
+             task.add_done_callback(lambda t: remove_active(cid, status_msg.id))
              return
         # -----------------------
         
