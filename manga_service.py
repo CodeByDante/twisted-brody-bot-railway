@@ -236,6 +236,18 @@ from database import manga_cache, save_manga_cache
 from pyrogram.types import InputMediaPhoto, InputMediaDocument
 from pyrogram.errors import FloodWait
 
+async def download_image(session, url, retries=3):
+    """Descarga una imagen con retries simples."""
+    for i in range(retries):
+        try:
+            async with session.get(url, timeout=20) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+        except Exception as e:
+            # print(f"Retry {i+1} for {url}: {e}")
+            await asyncio.sleep(1)
+    return None
+
 async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg, doc_mode=False, group_mode=True, is_sync=False):
     """
     Descarga, procesa y envía el manga.
