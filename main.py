@@ -69,7 +69,6 @@ def gen_kb(conf):
         [InlineKeyboardButton(f"⚙️ Auto: {txt_auto}", callback_data="menu|auto")],
         [InlineKeyboardButton(f"🌐 Idioma: {lang_flag}", callback_data="toggle|lang")],
         
-        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")],
         [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
     ])
     
@@ -723,16 +722,6 @@ async def analyze(c, m):
                      # Actualizar storage con la nueva cover
                      url_storage[cid]['manga_data'] = meta
              except: pass
-
-        if valid_cover:
-            try:
-                await c.send_photo(cid, meta['cover'], caption=txt, reply_markup=kb)
-            except Exception as e:
-                # Si falla foto (ej extension rara), enviamos texto
-                await c.send_message(cid, txt, reply_markup=kb)
-        else:
-            await c.send_message(cid, txt, reply_markup=kb)
-
 
         if valid_cover:
             # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
