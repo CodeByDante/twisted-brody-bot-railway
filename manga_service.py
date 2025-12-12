@@ -176,54 +176,38 @@ async def sync_mangas_incremental(client, status_msg):
     
     for m in mangas:
         mid = m['id']
-        # Clave base para ZIP Original (El formato estándar de backup)
-        # Nota: Guardamos "original" y "zip" como estándar de preservación
-        cache_key_zip = f"{mid}|zip|original|False"
+        # Clave base para IMAGENES DOCUMENTO (El nuevo estándar)
+        # container='img', quality='original', doc_mode=True
+        cache_key_img = f"{mid}|img|original|True"
         
         # Si YA lo tenemos, skip
-        if cache_key_zip in manga_cache:
+        if cache_key_img in manga_cache:
             continue
             
         # Si NO lo tenemos, procedemos
         new_count += 1
-        await status_msg.edit(f"🔄 **Sincronizando: {m['title']}**\n(Manga Nuevo detectado)...")
+        await status_msg.edit(f"🔄 **Sincronizando: {m['title']}**\n(Subiendo Galería de Documentos)...")
         
         try:
             # Reutilizamos la lógica de descarga pero FORZAMOS:
-            # - container='zip'
+            # - container='img'
             # - quality='original'
-            # - doc_mode=True (Para que process_manga_download devuelva Document)
-            # - Pero OJO: process_manga_download envía al chat_id que le pasemos.
-            #   Así que le pasamos el DUMP_CHANNEL_ID.
-            
-            # Hack: Process manga download sends messages. We want to capture the file_id.
-            # It already saves to cache if we pass the right flags.
-            
-            # Vamos a llamar a process_manga_download apuntando al Dump Channel
-            # Y le pasamos un "dummy message" si es necesario o manejamos el status allí.
-            
-            # Problema: process_manga_download edita `status_msg`. 
-            # No queremos que edite el mensaje del usuario con "Subiendo parte 1...".
-            # Solución: Creamos un mensaje dummy en el dump channel para que lo edite?
-            # Mejor: Modificamos process_manga_download para aceptar `silent=True`?
-            # Por ahora, dejemos que edite el mensaje del usuario (es informativo de "Syncing...").
-            
-            # Pero process_manga envía el archivo FINAL al `chat_id`.
-            # Así que SÍ debe ser `dump_id`.
+            # - doc_mode=True (Para documentos individuales)
+            # - group_mode=False (Uno por uno, más seguro para capturar IDs y evitar desorden en dump)
             
             await process_manga_download(
                 client, 
-                dump_id, # <--- ENVIAR AL CANAL PRIVADO
+                dump_id, # <--- ENVIAR AL CANAL PRIVADO (Proxy target)
                 m, 
-                'zip', 
+                'img', 
                 'original', 
-                status_msg, # <--- Edita el mensaje del admin (feedback visual)
-                doc_mode=True, # Forzar documento
-                group_mode=True,
-                is_sync=True # Flag para no borrar el status_msg al final
+                status_msg, 
+                doc_mode=True, 
+                group_mode=False, # Uno a uno para garantizar orden y capture
+                is_sync=True # SILENT MODE (No reenviar al usuario admin que ejecutó esto)
             )
             
-            # Sleep Anti-Flood
+            # Sleep Anti-Flood IMPORTANTE
             await asyncio.sleep(5)
             
         except Exception as e:
@@ -475,7 +459,10 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
              
              return sent_msg
 
-        # 4. Empaquetado o Envío Directo (IMG BATCH)
+        # 4. Empaquetado o Envío Directo (IMG BATCH con PROXY)
+        from database import global_config
+        dump_channel_id = global_config.get('dump_channel_id')
+
         if container == 'img':
             await status_msg.edit(f"📤 **{title}**\nEnviando {total} imágenes...")
             
@@ -492,85 +479,114 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             if not all_files:
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
-            # --- LOGICA IMG BATCH ---
-            # OJO: Para 'img' (batch), la lógica de "Proxy Dump" es compleja porque son MUCHOS mensajes.
-            # Para simplificar y evitar flood masivo x2 (Dump + User),
-            # Si es modo 'img' normal, enviamos directo al usuario por ahora 
-            # O implementamos un bucle cuidado.
+            # --- DETERMINAR DESTINO Y MODO PROXY ---
+            # Si is_sync=True, el chat_id ES el dump channel, así que target_chat = chat_id.
+            # Si is_sync=False, chat_id es el usuario. Si tenemos dump_id config, target_chat = dump_id.
             
-            # Decisión: El usuario prioriza Calidad y Cache. 
-            # Si quiere cachear TODO, debemos enviar al Dump.
-            # Pero enviar 50 fotos al dump y luego 50 al usuario es MUY lento y arriesgado (Flood).
-            # MEJOR: Para "Ver Imágenes" (IMG), enviamos directo al usuario y NO cacheamos individualmente en Dump
-            # (El cacheo fuerte es ZIP/PDF). 
-            # PERO: Podemos intentar cachear si es un volumen bajo.
+            target_upload_chat = chat_id
+            is_proxyING = False
             
-            # POR AHORA: Mantenemos envío directo para IMG MODE para no romper UX.
-            # El "On-Demand Cache" aplica fuerte a ZIP/PDF (Documentos únicos).
+            if dump_channel_id and str(chat_id) != str(dump_channel_id):
+                 target_upload_chat = dump_channel_id
+                 is_proxyING = True
             
-            # Lista para guardar file_ids si el envío directo genera IDs
+            # Si estamos en Sync o Proxy, enviamos 1 a 1 para asegurar IDs
+            # Lista para guardar file_ids
             sent_file_ids = []
 
-            if not group_mode:
-                for idx, f in enumerate(all_files):
-                    if idx % 10 == 0: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
-                    try:
-                        msg = await client.send_document(chat_id, f) if doc_mode else await client.send_photo(chat_id, f)
-                        if msg:
-                             if msg.document: sent_file_ids.append(msg.document.file_id)
-                             elif msg.photo: sent_file_ids.append(msg.photo.file_id)
-                        await asyncio.sleep(0.5)
-                    except FloodWait as e:
-                        await asyncio.sleep(e.value + 1)
-            else:
-                 # Group logic simplified for this block
-                 # (Not modifying full group logic to avoid massive diff, assuming direct send is OK for IMG now)
-                 # Reverting to original IMG block just for context, but applying ZIP/PDF proxy below.
-                 pass
+            # Nota: Si group_mode=True y es proxy, es risky porque captura IDs de album es diff.
+            # Forzamos group_mode=False si es is_proxyING o is_sync para asegurar cacheo robusto.
+            use_group_mode = False if (is_proxyING or is_sync) else group_mode
 
-            # ... (Rest of IMG logic remains similar mostly, focusing on ZIP/PDF below) ...
-            # RE-INSERTING IMG LOGIC PREVIOUSLY DELETED BY ACCIDENT IF I DON'T INCLUDE IT
-            # Wait, I am replacing from line 418. I need to be careful.
-            
-            # Let's actually USE the proxy logic ONLY for ZIP/PDF first as it's safer.
-            # RETHINK: The user wants "subira al canal verdad?".
-            # If I download ZIP, it's 1 file. Perfect for proxy.
-            
-            # Re-implementing IMG sending quickly (Direct to User) to avoid breaking it
-            # We will NOT proxy detailed IMG view yet because of flood risk.
-            
-            if not group_mode:
+            if not use_group_mode:
+                # ENVIAR 1 a 1 (Lento pero Seguro para Cache)
                 for idx, f in enumerate(all_files):
-                    if idx % 10 == 0: 
-                        try: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
-                        except: pass
+                    if idx % 5 == 0: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
                     try:
-                        if doc_mode: msg = await client.send_document(chat_id, f)
-                        else: msg = await client.send_photo(chat_id, f)
+                        # Enviar al TARGET (Dump o User)
+                        msg = None
+                        if doc_mode: msg = await client.send_document(target_upload_chat, f)
+                        else: msg = await client.send_photo(target_upload_chat, f)
+                        
                         if msg:
                              if msg.document: sent_file_ids.append(msg.document.file_id)
                              elif msg.photo: sent_file_ids.append(msg.photo.file_id)
-                        await asyncio.sleep(0.5)
-                    except FloodWait as e: await asyncio.sleep(e.value + 1)
+                        
+                        # Pausa anti-flood
+                        await asyncio.sleep(0.5) 
+                        
+                    except FloodWait as e:
+                        print(f"⏳ FloodWait: {e.value}s")
+                        await asyncio.sleep(e.value + 1)
+                    except Exception as e:
+                        print(f"Error {f}: {e}")
             else:
-                 # Simple Batch
-                 for i in range(0, len(all_files), 10):
+                 # Group logic (Solo para usuario final directo sin cacheo estricto)
+                 # Reverting to original IMG block just for context, but applying ZIP/PDF proxy below.
+                 if doc_mode:
+                    for i in range(0, len(all_files), 10):
                         chunk = all_files[i:i+10]
-                        media = [InputMediaDocument(f) for f in chunk] if doc_mode else [InputMediaPhoto(f) for f in chunk]
-                        try: 
-                            msgs = await client.send_media_group(chat_id, media)
-                            if msgs:
+                        media = [InputMediaDocument(f) for f in chunk]
+                        try:
+                             msgs = await client.send_media_group(target_upload_chat, media)
+                             if msgs:
                                 for m in msgs:
                                     if m.document: sent_file_ids.append(m.document.file_id)
-                                    elif m.photo: sent_file_ids.append(m.photo.file_id)
+                             await asyncio.sleep(1.5)
+                        except FloodWait as e: await asyncio.sleep(e.value + 1)
+                        except: pass
+                 else:
+                    for i in range(0, len(all_files), 10):
+                        chunk = all_files[i:i+10]
+                        media = [InputMediaPhoto(f) for f in chunk]
+                        try: 
+                            msgs = await client.send_media_group(target_upload_chat, media)
+                            if msgs:
+                                for m in msgs:
+                                    if m.photo: sent_file_ids.append(m.photo.file_id)
                             await asyncio.sleep(1.5)
                         except FloodWait as e: await asyncio.sleep(e.value + 1)
                         except: pass
 
+            # --- SAVE IMG CACHE ---
             if sent_file_ids:
                 manga_cache[cache_key] = sent_file_ids
                 save_manga_cache()
             
+            # --- DELIVERY PHASE (Si hicimos Proxy) ---
+            # Si is_sync=True, YA TERMINAMOS (Solo queríamos subir al dump).
+            # Si is_sync=False y is_proxyING=True (Usuario pidió, subimos a Dump), ahora reenviamos al usuario.
+            
+            if is_proxyING and not is_sync and sent_file_ids:
+                # Reenviar al Usuario (chat_id original)
+                await status_msg.edit("📤 **Reenviando al chat...**")
+                
+                # Optimización: Reenviar IDs? O usar send_photo con file_id?
+                # Usar send_photo con file_id es más limpio.
+                
+                # Usar group_mode original del user request
+                if group_mode:
+                     # Reenviar como album
+                     chunk_size = 10
+                     for i in range(0, len(sent_file_ids), chunk_size):
+                         chunk = sent_file_ids[i:i+chunk_size]
+                         media = []
+                         for fid in chunk:
+                             if doc_mode: media.append(InputMediaDocument(fid))
+                             else: media.append(InputMediaPhoto(fid))
+                         try:
+                             await client.send_media_group(chat_id, media)
+                             await asyncio.sleep(1)
+                         except: pass
+                else:
+                    # Reenviar 1 a 1
+                    for fid in sent_file_ids:
+                        try:
+                            if doc_mode: await client.send_document(chat_id, fid)
+                            else: await client.send_photo(chat_id, fid)
+                            await asyncio.sleep(0.3)
+                        except: pass
+
             await status_msg.delete()
             return
 
