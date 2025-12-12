@@ -548,10 +548,6 @@ async def analyze(c, m):
         # Guardar en Storage para el callback
         url_storage[cid] = {'manga_data': meta}
         
-        # Borrar mensaje de espera y mandar el bonito
-        # Guardar en Storage para el callback
-        url_storage[cid] = {'manga_data': meta}
-        
         # Borrar mensaje de espera
         await wait_msg.delete()
 
@@ -597,7 +593,9 @@ async def analyze(c, m):
                          meta['cover'] = first_ch['original'][0]
                      
                      valid_cover = meta.get('cover') and meta['cover'].startswith("http")
-             except: pass
+                     valid_cover = meta.get('cover') and meta['cover'].startswith("http")
+             except Exception as e:
+                 print(f"⚠️ Smart Cover Error: {e}")
         # ----------------------------
 
         if valid_cover:
