@@ -629,7 +629,7 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         if final_file and os.path.exists(final_file):
             await status_msg.edit(f"📤 **{title}**\nSubiendo archivo ({os.path.getsize(final_file)/1024/1024:.1f} MB)...")
             
-            cap = f"📚 **{title}**\n👤 {manga_data['author']}\n📦 {container.upper()} | 🎨 {quality.upper()}"
+            cap = f"📚 **{title}**\n👤 {manga_data['author']}\n🆔 `{manga_id}`\n📦 {container.upper()} | 🎨 {quality.upper()}"
             
             # USA LA PROXY FUNCTION
             await upload_and_cache(final_file, cap, True, cache_key)
