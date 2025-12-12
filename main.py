@@ -444,12 +444,10 @@ async def explicit_setup_cmd(c, m):
             quote=True
         )
     else:
-        await m.reply(
-            f"✅ **Sistema Configurado**\n\n"
-            f"Canal de Base de Datos: `{dump_id}`\n\n"
-            "Usa `/twisted brody manga flow` para sincronizar.",
-            quote=True
-        )
+        # Si ya está configurado, lanzar SYNC INCREMENTAL
+        from manga_service import sync_mangas_incremental
+        status = await m.reply("🔄 **Iniciando Sincronización Automática...**\n(Subiendo mangas faltantes al Canal Privado)", quote=True)
+        await sync_mangas_incremental(c, status)
 
 # --- SETUP FORWARD LISTENER ---
 @app.on_message(filters.forwarded)
