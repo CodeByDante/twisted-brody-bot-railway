@@ -8,6 +8,7 @@ import img2pdf
 from PIL import Image
 from io import BytesIO
 from config import DATA_DIR
+from pyrogram.types import InputMediaPhoto, InputMediaDocument
 
 FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/twistedbrody-9d163/databases/(default)/documents"
 
@@ -118,67 +119,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     container: 'zip', 'pdf' o 'img'
     quality: 'original', 'webp', 'png', 'jpg'
     """
-    # ... (código previo sin cambios) ...
-
-    # [SKIPLINES to line 201]
-
-        # 4. Empaquetado o Envío Directo
-        if container == 'img':
-            await status_msg.edit(f"📤 **{title}**\nEnviando {total} imágenes...")
-            from pyrogram.types import InputMediaPhoto, InputMediaDocument
-            
-            # Recolectar todos los archivos finales ordenados
-            all_files = []
-            for ch in chapters:
-                ch_safe = "".join([c for c in ch['title'] if c.isalnum() or c in " -_"]).strip()
-                ch_dir = os.path.join(base_tmp, ch_safe)
-                if not os.path.exists(ch_dir): continue
-                imgs = sorted(os.listdir(ch_dir))
-                for im in imgs:
-                    all_files.append(os.path.join(ch_dir, im))
-
-            if not all_files:
-                return await status_msg.edit("❌ Error: No se descargaron imágenes.")
-            
-            if not group_mode:
-                # ENVIAR 1 a 1 (Individual)
-                # Ojo: Enviarlos muy rápido puede floodear. Sleep leve.
-                for idx, f in enumerate(all_files):
-                    # Progress en status cada 5 fotos
-                    if idx % 5 == 0:
-                        try: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
-                        except: pass
-                        
-                    try:
-                        if doc_mode:
-                            await client.send_document(chat_id, f)
-                        else:
-                            await client.send_photo(chat_id, f)
-                        await asyncio.sleep(1.5) # Anti-Flood
-                    except Exception as e:
-                        print(f"Error enviando {f}: {e}")
-                        
-            else:
-                # ENVIAR AGRUPADO (ALBUM / BATCH)
-                if doc_mode:
-                    for i in range(0, len(all_files), 10):
-                        chunk = all_files[i:i+10]
-                        media = [InputMediaDocument(f) for f in chunk]
-                        try:
-                            await client.send_media_group(chat_id, media)
-                            await asyncio.sleep(3)
-                        except Exception as e: pass
-                else:
-                    for i in range(0, len(all_files), 10):
-                        chunk = all_files[i:i+10]
-                        media = [InputMediaPhoto(f) for f in chunk]
-                        try:
-                            await client.send_media_group(chat_id, media)
-                            await asyncio.sleep(3)
-                        except Exception as e: pass
-                        
-            await status_msg.delete()
-            return
     manga_id = manga_data['id']
     title = manga_data['title']
     
@@ -198,7 +138,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             return
 
         # Seleccionar fuente inicial
-        # Si pide wepb -> bajamos wepb. Si pide original/png/jpg -> bajamos original (mejor calidad base)
         use_source = 'webp' if quality == 'webp' else 'original'
         
         img_queue = []
@@ -240,7 +179,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                     except: pass
         
         # 3. Conversión de Formato (si aplica)
-        # Si quality es png/jpg, convertimos todo lo descargado
         if quality in ['png', 'jpg']:
             await status_msg.edit(f"⏳ **{title}**\n⚙️ Convirtiendo a {quality.upper()}...")
             for root, _, files in os.walk(base_tmp):
@@ -261,7 +199,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         # 4. Empaquetado o Envío Directo
         if container == 'img':
             await status_msg.edit(f"📤 **{title}**\nEnviando {total} imágenes...")
-            from pyrogram.types import InputMediaPhoto, InputMediaDocument
             
             # Recolectar todos los archivos finales ordenados
             all_files = []
@@ -276,26 +213,40 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             if not all_files:
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
-            if doc_mode:
-                # Enviar como documentos
-                for i in range(0, len(all_files), 10):
-                    chunk = all_files[i:i+10]
-                    media = [InputMediaDocument(f) for f in chunk]
+            if not group_mode:
+                # ENVIAR 1 a 1 (Individual)
+                for idx, f in enumerate(all_files):
+                    if idx % 5 == 0:
+                        try: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
+                        except: pass
+                        
                     try:
-                        await client.send_media_group(chat_id, media)
-                        await asyncio.sleep(2)
+                        if doc_mode:
+                            await client.send_document(chat_id, f)
+                        else:
+                            await client.send_photo(chat_id, f)
+                        await asyncio.sleep(1.5) # Anti-Flood
                     except Exception as e:
-                         pass
+                        print(f"Error enviando {f}: {e}")
+                        
             else:
-                # Enviar como Álbum (Fotos)
-                for i in range(0, len(all_files), 10):
-                    chunk = all_files[i:i+10]
-                    media = [InputMediaPhoto(f) for f in chunk]
-                    try:
-                        await client.send_media_group(chat_id, media)
-                        await asyncio.sleep(2)
-                    except Exception as e:
-                        pass
+                # ENVIAR AGRUPADO (ALBUM / BATCH)
+                if doc_mode:
+                    for i in range(0, len(all_files), 10):
+                        chunk = all_files[i:i+10]
+                        media = [InputMediaDocument(f) for f in chunk]
+                        try:
+                            await client.send_media_group(chat_id, media)
+                            await asyncio.sleep(3)
+                        except Exception as e: pass
+                else:
+                    for i in range(0, len(all_files), 10):
+                        chunk = all_files[i:i+10]
+                        media = [InputMediaPhoto(f) for f in chunk]
+                        try:
+                            await client.send_media_group(chat_id, media)
+                            await asyncio.sleep(3)
+                        except Exception as e: pass
                         
             await status_msg.delete()
             return
@@ -353,4 +304,3 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     finally:
         try: shutil.rmtree(base_tmp)
         except: pass
-
