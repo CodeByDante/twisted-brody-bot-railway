@@ -113,6 +113,9 @@ async def download_image(session, url):
     except: pass
     return None
 
+from pyrogram.types import InputMediaPhoto, InputMediaDocument
+from pyrogram.errors import FloodWait
+
 async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg, doc_mode=False, group_mode=True):
     """
     Descarga, procesa y envía el manga.
@@ -162,8 +165,8 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
 
         # 2. Descarga Concurrente
         async with aiohttp.ClientSession() as session:
-            for i in range(0, total, 10):
-                batch = img_queue[i:i+10]
+            for i in range(0, total, 40):
+                batch = img_queue[i:i+40]
                 tasks = []
                 for url, path in batch:
                     async def dl_task(u=url, p=path):
@@ -214,38 +217,59 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
             if not group_mode:
-                # ENVIAR 1 a 1 (Individual)
+                # ENVIAR 1 a 1 (Individual) - MODO VELOZ
                 for idx, f in enumerate(all_files):
-                    if idx % 5 == 0:
+                    if idx % 10 == 0: # Actualizar status cada 10 fotos
                         try: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
                         except: pass
-                        
-                    try:
-                        if doc_mode:
-                            await client.send_document(chat_id, f)
-                        else:
-                            await client.send_photo(chat_id, f)
-                        await asyncio.sleep(1.5) # Anti-Flood
-                    except Exception as e:
-                        print(f"Error enviando {f}: {e}")
+                    
+                    sent = False
+                    while not sent:
+                        try:
+                            if doc_mode:
+                                await client.send_document(chat_id, f)
+                            else:
+                                await client.send_photo(chat_id, f)
+                            sent = True
+                            await asyncio.sleep(0.5) # Sleep reducido (0.5s)
+                        except FloodWait as e:
+                            print(f"⏳ FloodWait: {e.value}s")
+                            await asyncio.sleep(e.value + 1)
+                        except Exception as e:
+                            print(f"Error enviando {f}: {e}")
+                            sent = True # Skip item on error
                         
             else:
-                # ENVIAR AGRUPADO (ALBUM / BATCH)
+                # ENVIAR AGRUPADO (ALBUM / BATCH) - MODO VELOZ
+                # Definir función helper para reintentos
+                async def send_group_safe(media_group):
+                    while True:
+                        try:
+                            await client.send_media_group(chat_id, media_group)
+                            return
+                        except FloodWait as e:
+                            print(f"⏳ FloodWait Group: {e.value}s")
+                            await asyncio.sleep(e.value + 1)
+                        except Exception:
+                            return # Skip on other errors
+
                 if doc_mode:
                     for i in range(0, len(all_files), 10):
                         chunk = all_files[i:i+10]
                         media = [InputMediaDocument(f) for f in chunk]
-                        try:
-                            await client.send_media_group(chat_id, media)
-                            await asyncio.sleep(3)
-                        except Exception as e: pass
+                        await send_group_safe(media)
+                        await asyncio.sleep(1.5) # Sleep reducido (1.5s)
                 else:
                     for i in range(0, len(all_files), 10):
                         chunk = all_files[i:i+10]
                         media = [InputMediaPhoto(f) for f in chunk]
                         try:
                             await client.send_media_group(chat_id, media)
-                            await asyncio.sleep(3)
+                            await asyncio.sleep(1.5)
+                        except FloodWait as e:
+                             await asyncio.sleep(e.value + 1)
+                             try: await client.send_media_group(chat_id, media)
+                             except: pass
                         except Exception as e: pass
                         
             await status_msg.delete()
