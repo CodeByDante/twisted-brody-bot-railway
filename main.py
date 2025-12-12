@@ -183,8 +183,14 @@ async def cb(c, q):
                 [InlineKeyboardButton("🔙 Atrás", callback_data="manga_back")]
             ])
             
-            icon = "📦" if container == "zip" else "📄"
-            txt_cont = "ZIP" if container == "zip" else "PDF"
+            icon = "📦"
+            txt_cont = "ZIP"
+            if container == "pdf":
+                icon = "📄"
+                txt_cont = "PDF"
+            elif container == "img":
+                icon = "🖼"
+                txt_cont = "Imágenes"
             
             await msg.edit_text(
                 f"{icon} **Selecciona Calidad para {txt_cont}:**\n\n"
@@ -223,7 +229,7 @@ async def cb(c, q):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
              InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
-            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img|original")],
+            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img")],
             [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
         ])
         
@@ -537,12 +543,27 @@ async def analyze(c, m):
         url_storage[cid] = {'manga_data': meta}
         
         # Borrar mensaje de espera y mandar el bonito
+        # Guardar en Storage para el callback
+        url_storage[cid] = {'manga_data': meta}
+        
+        # Borrar mensaje de espera
         await wait_msg.delete()
+
+        # --- AUTO MODE CHECK ---
+        # Si Auto = Max, descargamos ZIP Original directo
+        if conf.get('q_auto') == 'max':
+             status_msg = await c.send_message(cid, f"⚙️ **Auto-Max detectado:** Iniciando descarga ZIP Original...")
+             asyncio.create_task(process_manga_download(
+                c, cid, meta, 'zip', 'original', status_msg, 
+                doc_mode=conf.get('doc_mode', False)
+             ))
+             return
+        # -----------------------
         
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
              InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
-            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img|original")],
+            [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img")],
             [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
         ])
         
