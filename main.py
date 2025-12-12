@@ -264,9 +264,10 @@ async def cb(c, q):
 @app.on_message(filters.command("start"))
 async def start(c, m):
     try:
+        from pyrogram.types import MenuButtonDefault
         await c.set_chat_menu_button(
             chat_id=m.chat.id,
-            menu_button=MenuButtonWebApp(text="Open App", web_app=WebAppInfo(url="https://twisted-brody-manga-flow.vercel.app"))
+            menu_button=MenuButtonDefault()
         )
     except Exception as e:
         print(f"⚠️ Error setting menu button: {e}")
