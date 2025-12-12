@@ -6,3 +6,4 @@ aiohttp
 requests
 gallery-dl
 img2pdf
+Pillow

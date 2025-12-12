@@ -15,6 +15,7 @@ from jav_extractor import extraer_jav_directo
 # Sniffer Manual (Playwright - Solo si se activa botón)
 # from sniffer import detectar_video_real # Eliminado 
 from downloader import procesar_descarga
+from manga_service import get_manga_metadata, process_manga_download
 
 print("🚀 Iniciando Bot Pro (JAV Turbo + FB Fix + Auto-Swap)...")
 
@@ -153,6 +154,29 @@ async def cb(c, q):
 
         
 
+
+    # --- MENÚ MANGA FLOW ---
+    elif "manga_sel" in data:
+        # data format: manga_sel|FORMAT
+        parts = data.split("|")
+        fmt = parts[1]
+        cid = msg.chat.id
+        
+        st = url_storage.get(cid)
+        if not st or 'manga_data' not in st:
+            return await q.answer("⚠️ La sesión expiró. Reenvía el link.", show_alert=True)
+            
+        manga_data = st['manga_data']
+        
+        # Ack callback
+        await q.answer(f"Iniciando descarga {fmt.upper()}...")
+        await msg.delete()
+        
+        status_msg = await c.send_message(cid, f"⏳ **Iniciando descarga {fmt.upper()}...**")
+        
+        # Ejecutar en background task
+        asyncio.create_task(process_manga_download(c, cid, manga_data, fmt, status_msg))
+        return
 
     elif data == "menu|main": pass
     elif data == "start": pass # Para el botón de volver del start
@@ -431,6 +455,46 @@ async def analyze(c, m):
     html_links_data = [] 
     info = {}
     yt_dlp_error = None
+
+    # --- MANGA FLOW DETECTOR ---
+    if "twisted-brody-manga-flow.vercel.app" in url:
+        if "#manga/" not in url:
+            return await wait_msg.edit("⚠️ Link de Manga Flow inválido (Falta #manga/ID).")
+            
+        manga_id = url.split("#manga/")[1].split("?")[0].strip()
+        await wait_msg.edit("🔍 **Buscando Manga en Firebase...**")
+        
+        meta = await get_manga_metadata(manga_id)
+        
+        if not meta:
+            return await wait_msg.edit("❌ No se encontró el manga (Error API o ID inválido).")
+            
+        # Guardar en Storage para el callback
+        url_storage[cid] = {'manga_data': meta}
+        
+        # Borrar mensaje de espera y mandar el bonito
+        await wait_msg.delete()
+        
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📦 ZIP (Original)", callback_data="manga_sel|original")],
+            [InlineKeyboardButton("⚡ ZIP (WebP)", callback_data="manga_sel|webp")],
+            [InlineKeyboardButton("🖼 ZIP (PNG)", callback_data="manga_sel|png"),
+             InlineKeyboardButton("📸 ZIP (JPG)", callback_data="manga_sel|jpg")],
+            [InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+            [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
+        ])
+        
+        txt = (f"📚 **Manga Encontrado**\n\n"
+               f"📌 **Título:** {meta['title']}\n"
+               f"👤 **Autor:** {meta['author']}\n\n"
+               f"Selecciona el formato de descarga:")
+               
+        valid_cover = meta.get('cover') and meta['cover'].startswith("http")
+        if valid_cover:
+            await c.send_photo(cid, meta['cover'], caption=txt, reply_markup=kb)
+        else:
+            await c.send_message(cid, txt, reply_markup=kb)
+        return
 
     # --- FUNCIÓN INTERNAL: FALLBACK GALERÍA ---
     async def process_gallery_fallback():
