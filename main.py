@@ -895,9 +895,13 @@ async def analyze(c, m):
     btns.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancel")])
     
     # Auto Download
-    if info and conf['q_auto']:
+    # Si esta en modo Auto o si el formato predefinido es MP3
+    if info and (conf['q_auto'] or conf.get('fmt') == 'mp3'):
         target_q = None
-        if sorted_fmts:
+        
+        if conf.get('fmt') == 'mp3':
+            target_q = 'mp3'
+        elif sorted_fmts:
             if conf['q_auto'] == 'max': target_q = str(sorted_fmts[0][1]['h'])
             elif conf['q_auto'] == 'min': target_q = str(sorted_fmts[-1][1]['h'])
         
