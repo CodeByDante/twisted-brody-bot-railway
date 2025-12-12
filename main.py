@@ -155,27 +155,87 @@ async def cb(c, q):
         
 
 
+
     # --- MENÚ MANGA FLOW ---
     elif "manga_sel" in data:
-        # data format: manga_sel|FORMAT
-        parts = data.split("|")
-        fmt = parts[1]
-        cid = msg.chat.id
+        # data format: manga_sel|CONTAINER|QUALITY (ej: manga_sel|zip|webp)
+        # o manga_sel|CONTAINER (ej: manga_sel|zip) -> Muestra submenu calidad
         
+        parts = data.split("|")
+        
+        cid = msg.chat.id
         st = url_storage.get(cid)
         if not st or 'manga_data' not in st:
             return await q.answer("⚠️ La sesión expiró. Reenvía el link.", show_alert=True)
-            
         manga_data = st['manga_data']
+
+        # CASO 1: Selección de Contenedor (ZIP o PDF)
+        if len(parts) == 2:
+            container = parts[1] # zip o pdf
+            
+            # Generar Submenú de Calidades
+            import copy
+            kb_quality = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💎 Original", callback_data=f"manga_sel|{container}|original")],
+                [InlineKeyboardButton("⚡ WebP (Optimizado)", callback_data=f"manga_sel|{container}|webp")],
+                [InlineKeyboardButton("🖼 PNG", callback_data=f"manga_sel|{container}|png"),
+                 InlineKeyboardButton("📸 JPG", callback_data=f"manga_sel|{container}|jpg")],
+                [InlineKeyboardButton("🔙 Atrás", callback_data="manga_back")]
+            ])
+            
+            icon = "📦" if container == "zip" else "📄"
+            txt_cont = "ZIP" if container == "zip" else "PDF"
+            
+            await msg.edit_text(
+                f"{icon} **Selecciona Calidad para {txt_cont}:**\n\n"
+                f"📌 **{manga_data['title']}**",
+                reply_markup=kb_quality
+            )
+            return
+
+        # CASO 2: Selección Final (Contenedor + Calidad)
+        elif len(parts) == 3:
+            container = parts[1]
+            fmt = parts[2]
+            
+            # Ack callback
+            await q.answer(f"Descargando {container.upper()} ({fmt})...")
+            await msg.delete()
+            
+            status_msg = await c.send_message(cid, f"⏳ **Iniciando descarga {container.upper()} [{fmt.upper()}]...**")
+            
+            # Ejecutar en background task
+            # Pasamos container y fmt a la función
+            asyncio.create_task(process_manga_download(c, cid, manga_data, container, fmt, status_msg))
+            return
+    
+    elif data == "manga_back":
+        cid = msg.chat.id
+        st = url_storage.get(cid)
+        if not st or 'manga_data' not in st:
+             return await msg.delete() # Expiró
+
+        meta = st['manga_data']
+        # Restaurar Menú Principal
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
+             InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+            [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
+        ])
         
-        # Ack callback
-        await q.answer(f"Iniciando descarga {fmt.upper()}...")
-        await msg.delete()
+        txt = (f"📚 **Manga Encontrado**\n\n"
+               f"📌 **Título:** {meta['title']}\n"
+               f"👤 **Autor:** {meta['author']}\n\n"
+               f"Elige el tipo de archivo:")
         
-        status_msg = await c.send_message(cid, f"⏳ **Iniciando descarga {fmt.upper()}...**")
-        
-        # Ejecutar en background task
-        asyncio.create_task(process_manga_download(c, cid, manga_data, fmt, status_msg))
+        # Intentar editar con la foto si es posible, o crear nuevo mensaje si necesitamos foto
+        # Al editar mensaje con foto, usamos InputMediaPhoto si ya tenía foto.
+        # Simplificación: Editamos solo texto/markup. La foto se queda.
+        try:
+            await msg.edit_caption(caption=txt, reply_markup=kb)
+        except:
+             # Si no tenía caption (era texto puro), editamos texto
+             await msg.edit_text(txt, reply_markup=kb)
         return
 
     elif data == "menu|main": pass
@@ -476,18 +536,15 @@ async def analyze(c, m):
         await wait_msg.delete()
         
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📦 ZIP (Original)", callback_data="manga_sel|original")],
-            [InlineKeyboardButton("⚡ ZIP (WebP)", callback_data="manga_sel|webp")],
-            [InlineKeyboardButton("🖼 ZIP (PNG)", callback_data="manga_sel|png"),
-             InlineKeyboardButton("📸 ZIP (JPG)", callback_data="manga_sel|jpg")],
-            [InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+            [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
+             InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
             [InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]
         ])
         
         txt = (f"📚 **Manga Encontrado**\n\n"
                f"📌 **Título:** {meta['title']}\n"
                f"👤 **Autor:** {meta['author']}\n\n"
-               f"Selecciona el formato de descarga:")
+               f"Elige el tipo de archivo:")
                
         valid_cover = meta.get('cover') and meta['cover'].startswith("http")
         if valid_cover:

@@ -112,10 +112,11 @@ async def download_image(session, url):
     except: pass
     return None
 
-async def process_manga_download(client, chat_id, manga_data, format_type, status_msg):
+async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg):
     """
     Descarga, procesa y envía el manga.
-    format_type: 'original', 'webp', 'png', 'jpg', 'pdf'
+    container: 'zip' o 'pdf'
+    quality: 'original', 'webp', 'png', 'jpg'
     """
     manga_id = manga_data['id']
     title = manga_data['title']
@@ -135,21 +136,11 @@ async def process_manga_download(client, chat_id, manga_data, format_type, statu
             await status_msg.edit("❌ No se encontraron capítulos o imágenes.")
             return
 
-        total_imgs = 0
-        dl_tasks = []
-        
-        # Seleccionar fuente según formato
-        # Original, PNG, JPG, PDF -> Usamos 'original' (mejor calidad base)
-        # WebP -> Usamos 'webp'
-        use_source = 'original'
-        if format_type == 'webp': use_source = 'webp'
-        
-        # Preparar lista de descargas
-        # Aplanamos: Lista de (url, path_destino)
-        # Estructura: tmp/Cap1/001.ext
+        # Seleccionar fuente inicial
+        # Si pide wepb -> bajamos wepb. Si pide original/png/jpg -> bajamos original (mejor calidad base)
+        use_source = 'webp' if quality == 'webp' else 'original'
         
         img_queue = []
-        
         for ch in chapters:
             ch_safe = "".join([c for c in ch['title'] if c.isalnum() or c in " -_"]).strip()
             ch_dir = os.path.join(base_tmp, ch_safe)
@@ -160,16 +151,16 @@ async def process_manga_download(client, chat_id, manga_data, format_type, statu
             
             for idx, url in enumerate(src_list):
                 ext = url.split('?')[0].split('.')[-1].lower()
-                if len(ext) > 4: ext = 'jpg' # Fix extensiones raras
+                if len(ext) > 4: ext = 'jpg'
                 
                 fname = f"{idx+1:03d}.{ext}"
                 dest_path = os.path.join(ch_dir, fname)
                 img_queue.append((url, dest_path))
         
         total = len(img_queue)
-        await status_msg.edit(f"⏳ **{title}**\n⬇️ Descargando {total} imágenes ({format_type.upper()})...")
+        await status_msg.edit(f"⏳ **{title}**\n⬇️ Descargando {total} imágenes ({quality.upper()})...")
 
-        # 2. Descarga Concurrente (Lotes de 10)
+        # 2. Descarga Concurrente
         async with aiohttp.ClientSession() as session:
             for i in range(0, total, 10):
                 batch = img_queue[i:i+10]
@@ -182,80 +173,69 @@ async def process_manga_download(client, chat_id, manga_data, format_type, statu
                     tasks.append(dl_task())
                 await asyncio.gather(*tasks)
                 
-                # Feedback visual cada 20%
                 if i % 20 == 0:
                     pct = int((i/total)*100)
                     try: await status_msg.edit(f"⏳ **{title}**\n⬇️ Descargando... {pct}%")
                     except: pass
         
-        # 3. Procesamiento / Conversión / Empaquetado
-        await status_msg.edit(f"⏳ **{title}**\n⚙️ Procesando formato {format_type.upper()}...")
-        
-        # Si es PDF, juntamos todo en un solo PDF grande? O por capítulo?
-        # Generalmente un PDF por manga completo puede ser gigante. 
-        # Haremos UN archivo final (ZIP o PDF) que contenga todo, o un ZIP con carpetas?
-        # El user dijo "Descargar ZIP" o "Descargar PDF". Asumimos UN archivo.
-        
+        # 3. Conversión de Formato (si aplica)
+        # Si quality es png/jpg, convertimos todo lo descargado
+        if quality in ['png', 'jpg']:
+            await status_msg.edit(f"⏳ **{title}**\n⚙️ Convirtiendo a {quality.upper()}...")
+            for root, _, files in os.walk(base_tmp):
+                for file in files:
+                    safe_path = os.path.join(root, file)
+                    try:
+                        with Image.open(safe_path) as im:
+                            rgb_im = im.convert('RGB')
+                            new_ext = f".{quality}"
+                            base_w = os.path.splitext(safe_path)[0]
+                            new_path = base_w + new_ext
+                            rgb_im.save(new_path, quality=95 if quality == 'jpg' else None)
+                        
+                        if new_path != safe_path: os.remove(safe_path)
+                    except Exception as e:
+                        print(f"Error converting {file}: {e}")
+
+        # 4. Empaquetado (ZIP o PDF)
+        await status_msg.edit(f"⏳ **{title}**\n📦 Creando archivo {container.upper()}...")
         final_file = None
         
-        if format_type == 'pdf':
-            # Juntar todas las imágenes ordenadas
+        if container == 'pdf':
+            # PDF: Juntar TODO en un solo archivo
             all_imgs_paths = []
             for ch in chapters:
                 ch_safe = "".join([c for c in ch['title'] if c.isalnum() or c in " -_"]).strip()
                 ch_dir = os.path.join(base_tmp, ch_safe)
                 if not os.path.exists(ch_dir): continue
                 
+                # Ordenar por nombre (001, 002...)
                 imgs = sorted(os.listdir(ch_dir))
                 for im in imgs:
                     all_imgs_paths.append(os.path.join(ch_dir, im))
             
             if all_imgs_paths:
-                pdf_path = os.path.join(base_tmp, f"{title}.pdf")
+                pdf_path = os.path.join(DATA_DIR, f"{title} [{quality.upper()}].pdf")
                 with open(pdf_path, "wb") as f:
                     f.write(img2pdf.convert(all_imgs_paths))
                 final_file = pdf_path
                 
         else:
-            # ZIP (Original, WebP, PNG, JPG)
-            # Primero convertir si hace falta
-            if format_type in ['png', 'jpg']:
-                for root, _, files in os.walk(base_tmp):
-                    for file in files:
-                        safe_path = os.path.join(root, file)
-                        try:
-                            # Abrir y convertir
-                            with Image.open(safe_path) as im:
-                                rgb_im = im.convert('RGB')
-                                new_ext = '.png' if format_type == 'png' else '.jpg'
-                                base_w = os.path.splitext(safe_path)[0]
-                                new_path = base_w + new_ext
-                                
-                                rgb_im.save(new_path, quality=95 if format_type == 'jpg' else None)
-                            
-                            # Borrar original si es diferente
-                            if new_path != safe_path: os.remove(safe_path)
-                            
-                        except Exception as e:
-                            print(f"Error converting {file}: {e}")
-
-            # Crear ZIP
-            zip_path = os.path.join(DATA_DIR, f"{title} [{format_type.upper()}].zip")
+            # ZIP: Mantener estructura de carpetas
+            zip_path = os.path.join(DATA_DIR, f"{title} [{quality.upper()}].zip")
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, _, files in os.walk(base_tmp):
                     for file in files:
                         abs_path = os.path.join(root, file)
-                        # Estructura dentro del ZIP: Capítulo X/001.jpg
                         arc_name = os.path.relpath(abs_path, base_tmp)
                         zipf.write(abs_path, arc_name)
-            
             final_file = zip_path
 
-        # 4. Enviar
+        # 5. Enviar
         if final_file and os.path.exists(final_file):
             await status_msg.edit(f"📤 **{title}**\nSubiendo archivo ({os.path.getsize(final_file)/1024/1024:.1f} MB)...")
             
-            cap = f"📚 **{title}**\n👤 {manga_data['author']}\n📦 Formato: {format_type.upper()}"
+            cap = f"📚 **{title}**\n👤 {manga_data['author']}\n📦 {container.upper()} | 🎨 {quality.upper()}"
             await client.send_document(chat_id, final_file, caption=cap)
             
             try: os.remove(final_file)
@@ -268,7 +248,6 @@ async def process_manga_download(client, chat_id, manga_data, format_type, statu
         await status_msg.edit(f"❌ Error crítico: {e}")
         
     finally:
-        # Limpieza
         try: shutil.rmtree(base_tmp)
         except: pass
 
