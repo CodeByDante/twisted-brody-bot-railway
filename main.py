@@ -47,6 +47,7 @@ def gen_kb(conf):
     fmt_icon = "🎵 MP3" if conf['fmt'] == 'mp3' else "📹 MP4"
     aria_icon = "🟢" if conf.get('fast_enabled', True) else "🔴"
     doc_icon = "🟢" if conf.get('doc_mode', False) else "🔴"
+    group_icon = "🟢" if conf.get('group_mode', True) else "🔴"
 
     kb = [
         [# InlineKeyboardButton(f"🕵️ Sniffer (HTML): {c_html}", callback_data="toggle|html"), 
@@ -54,6 +55,7 @@ def gen_kb(conf):
         
         [InlineKeyboardButton(f"🚀 Turbo: {aria_icon}", callback_data="toggle|fast"),
          InlineKeyboardButton(f"📄 Doc: {doc_icon}", callback_data="toggle|doc")],
+        [InlineKeyboardButton(f"📚 Agrup: {group_icon}", callback_data="toggle|group")],
 
         # [InlineKeyboardButton(f"🔄 Comandos Replay: {replay_icon}", callback_data="toggle|replay")], # Eliminado
     ]
@@ -102,6 +104,7 @@ async def cb(c, q):
     elif data == "toggle|meta": conf['meta'] = not conf['meta']
     elif data == "toggle|fast": conf['fast_enabled'] = not conf.get('fast_enabled', True)
     elif data == "toggle|doc": conf['doc_mode'] = not conf.get('doc_mode', False)
+    elif data == "toggle|group": conf['group_mode'] = not conf.get('group_mode', True)
     # elif data == "toggle|replay": conf['replay_enabled'] = not conf.get('replay_enabled', False) # Eliminado
     elif data == "toggle|lang": conf['lang'] = 'es' if conf.get('lang', 'es') == 'orig' else 'orig'
     elif data == "toggle|fmt": conf['fmt'] = 'mp3' if conf['fmt'] == 'mp4' else 'mp4'
@@ -214,7 +217,8 @@ async def cb(c, q):
             # Pasamos container y fmt a la función
             asyncio.create_task(process_manga_download(
                 c, cid, manga_data, container, fmt, status_msg, 
-                doc_mode=conf.get('doc_mode', False)
+                doc_mode=conf.get('doc_mode', False),
+                group_mode=conf.get('group_mode', True)
             ))
             return
     
@@ -555,7 +559,8 @@ async def analyze(c, m):
              status_msg = await c.send_message(cid, f"⚙️ **Auto-Max detectado:** Iniciando descarga ZIP Original...")
              asyncio.create_task(process_manga_download(
                 c, cid, meta, 'zip', 'original', status_msg, 
-                doc_mode=conf.get('doc_mode', False)
+                doc_mode=conf.get('doc_mode', False),
+                group_mode=conf.get('group_mode', True)
              ))
              return
         # -----------------------
