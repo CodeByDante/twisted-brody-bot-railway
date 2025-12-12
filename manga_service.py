@@ -503,10 +503,14 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                 for idx, f in enumerate(all_files):
                     if idx % 5 == 0: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
                     try:
-                        # Enviar al TARGET (Dump o User)
+                        # Enviar al TARGET (Dump o User) with CAPTION
+                        # Caption minimalista para no ensuciar, pero con ID para búsqueda
+                        # ID debe ser searchable
+                        img_cap = f"🆔 `{manga_id}`\n📚 {title} - {os.path.basename(f)}"
+                        
                         msg = None
-                        if doc_mode: msg = await client.send_document(target_upload_chat, f)
-                        else: msg = await client.send_photo(target_upload_chat, f)
+                        if doc_mode: msg = await client.send_document(target_upload_chat, f, caption=img_cap)
+                        else: msg = await client.send_photo(target_upload_chat, f, caption=img_cap)
                         
                         if msg:
                              if msg.document: sent_file_ids.append(msg.document.file_id)
