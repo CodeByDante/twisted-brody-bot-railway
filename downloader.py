@@ -6,6 +6,7 @@ import asyncio
 import yt_dlp
 import shutil
 import subprocess
+import aiohttp
 from pyrogram import enums
 from config import LIMIT_2GB, HAS_FAST, DOWNLOAD_DIR, TOOLS_DIR, FAST_PATH
 from database import get_config, downloads_db, guardar_db, add_active, remove_active
@@ -27,6 +28,32 @@ if not os.path.exists(RE_PATH):
          elif os.path.exists("N_m3u8DL-RE"): RE_PATH = "./N_m3u8DL-RE"
 
 HAS_RE = RE_PATH is not None and os.path.exists(RE_PATH)
+
+async def get_mediafire_link(url):
+    """
+    Extracts the direct download link from a Mediafire URL.
+    Attempts to find the main download button via Regex.
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as resp:
+                if resp.status != 200: return None
+                text = await resp.text()
+                
+                # Buscar el link en el aria-label o href del botón de descarga
+                # Pattern: href="h..." id="downloadButton"
+                match = re.search(r'href="([^"]+)"\s+id="downloadButton"', text)
+                if match:
+                    return match.group(1)
+                
+                # Fallback: buscar aria-label="Download file"
+                match2 = re.search(r'href="([^"]+)"[^>]+aria-label="Download file"', text)
+                if match2:
+                    return match2.group(1)
+                
+    except Exception as e:
+        print(f"Error scraping Mediafire: {e}")
+    return None
 
 async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     conf = get_config(chat_id)
@@ -63,10 +90,16 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             res_str = f"{calidad}p" if calidad.isdigit() else calidad.upper()
             cap_cache = f"🎬 **{datos.get('titulo','Video')}**\n⚙️ {res_str} | ✨ (Reenviado al instante)"
             
+            # Intentar determinar tipo por ckey o intentar send_video primero, si falla send_document
+            # Simplificación: Asumir Video si no es mp3, si falla probar documento.
             if calidad == "mp3": 
                 await client.send_audio(chat_id, file_id, caption=cap_cache)
-            else: 
-                await client.send_video(chat_id, file_id, caption=cap_cache)
+            else:
+                try:
+                    await client.send_video(chat_id, file_id, caption=cap_cache)
+                except:
+                    # Si falla (ej. era un ZIP guardado como video), probar documento
+                    await client.send_document(chat_id, file_id, caption=cap_cache)
             return
         except Exception as e:
             print(f"⚠️ Cache inválido (Archivo borrado?): {e}")
@@ -115,17 +148,31 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
         status = await client.send_message(chat_id, f"⏳ **Descargando...**\n📥 {calidad}")
         
         # --- LOGICA DE SELECCIÓN DE MOTOR ---
-        # Usamos N_m3u8DL-RE (Turbo) si:
-        # 1. Existe el .exe en la carpeta.
-        # 2. El enlace contiene .m3u8 (Clásico de JAV).
-        # 3. No es una descarga de audio MP3.
-        usar_turbo = HAS_RE and ".m3u8" in url_descarga and calidad != "mp3"
-
         engine_name = "Nativo (Estándar)"
+        is_direct_download = False
+        mediafire_link = None
+        
+        # 1. Mediafire Check
+        if "mediafire.com" in url_descarga:
+            await status.edit(f"⏳ **Mediafire Check...**\n🔍 Buscando enlace directo...")
+            mf_link = await get_mediafire_link(url_descarga)
+            if mf_link:
+                url_descarga = mf_link
+                engine_name = "Mediafire (Directo)"
+                is_direct_download = True
+                mediafire_link = True
+            else:
+                # Si falla scraper, dejamos que yt-dlp intente (aunque probablemente falle)
+                pass
+
+        # 2. Turbo Check
+        usar_turbo = HAS_RE and ".m3u8" in url_descarga and calidad != "mp3" and not mediafire_link
+
         if usar_turbo: 
             engine_name = "Turbo (N_m3u8DL-RE)"
-        elif HAS_FAST and not calidad.startswith("html_") and conf.get('fast_enabled', True):
-            engine_name = "Fast (Ultra)"
+        elif is_direct_download or (HAS_FAST and not calidad.startswith("html_") and conf.get('fast_enabled', True)):
+            if not is_direct_download: 
+                 engine_name = "Fast (Ultra)"
 
         await status.edit(f"⏳ **Descargando...**\n📥 {calidad}\n🚀 **Motor:** {engine_name}")
 
@@ -158,13 +205,10 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                 
                 line_str = line.decode('utf-8', errors='ignore').strip()
                 
-                # Parsing de N_m3u8DL-RE output
-                # Ejemplo: Progress: 45.5% | Speed: 5.2 MB/s ...
                 if "Progress:" in line_str:
                     now_t = time.time()
                     if (now_t - last_edit) > 4:
                         last_edit = now_t
-                        # Extraer % y Velocidad con Regex simple
                         p_match = re.search(r'Progress:\s*([\d\.]+%?)', line_str)
                         s_match = re.search(r'Speed:\s*([\d\.]+\s*\w+/s)', line_str)
                         
@@ -188,18 +232,19 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                     final = f"{base_name}{ext}"
                     break
         
-        # --- MODO DIRECTO (FAST PURO) ---
-        elif str(vid_id).startswith("direct_") and HAS_FAST:
-             engine_name = "Fast (Directo)"
-             await status.edit(f"⏳ **Descargando...**\n📥 Direct Link\n🚀 **Motor:** {engine_name}")
+        # --- MODO DIRECTO (FAST/MEDIAFIRE PURO) ---
+        elif is_direct_download or (str(vid_id).startswith("direct_") and HAS_FAST):
              
-             final = f"{base_name}.mp4" # Asumimos MP4 por defecto en direct
+             # En modo directo, el nombre final no siempre es MP4. 
+             # Si es mediafire, intentamos adivinar extensión o usar temp name
+             temp_out = f"dl_{chat_id}_{ts}_temp"
+             
              cookie_file = sel_cookie(url)
              
              cmd = [
                  FAST_PATH if os.path.exists(FAST_PATH) else "aria"+"2c", 
-                 url,
-                 "-o", f"dl_{chat_id}_{ts}.mp4", 
+                 url_descarga,
+                 "-o", f"dl_{chat_id}_{ts}_temp", 
                  "-d", DOWNLOAD_DIR,
                  "-x", "16", "-s", "16", "-j", "1", "-k", "1M",
                  "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -214,31 +259,32 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
              # Ejecutar
              process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
              
-             # Loop simple de progreso (leyendo stdout de fast es complejo, mejor solo esperar o leer chunks)
-             # Fast interactive output no se lleva bien con PIPE.
-             # Usaremos un timer simple para actualizar status "sigue vivo"
-             
+             # Loop simple de progreso
              start_t = time.time()
              while process.returncode is None:
                  try:
                      await asyncio.sleep(3)
                      elapsed = int(time.time() - start_t)
-                     await status.edit(f"⏳ **Descargando...**\n🚀 **Motor:** Fast (Directo)\n⏱ Tiempo: {elapsed}s")
+                     await status.edit(f"⏳ **Descargando...**\n🚀 **Motor:** {engine_name}\n⏱ Tiempo: {elapsed}s")
                  except: pass
                  
                  if process.returncode is not None: break
-                 # Verificar si el proceso terminó
                  try: 
                     await asyncio.wait_for(process.wait(), timeout=0.1)
                  except: pass
 
-             if os.path.exists(final):
-                 pass # Éxito
+             final_temp = os.path.join(DOWNLOAD_DIR, temp_out)
+             if os.path.exists(final_temp):
+                 # Intentar detectar extensión real si podemos (usando libmagic o simplemente renombrando si Mediafire redirigió a un archivo con ext)
+                 # En este caso simple, si sabemos que es mediafire, el link solía tener el nombre.
+                 # Pero aria2 guarda con el nombre que le dimos.
+                 
+                 # Estrategia: Ver si file es Video o ZIP
+                 # Renombramos a algo seguro por ahora, luego decidiremos si es Video o Doc
+                 final = final_temp
              else:
-                 # Si falló, intentar wget básico (requests)
+                 # Fallback wget basico?
                  pass
-
-
 
         else:
             # --- MODO CLÁSICO (YT-DLP) ---
@@ -264,7 +310,6 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             if cookie_file: opts['cookiefile'] = cookie_file
 
             # --- FAST: ACELERADOR DE DESCARGAS ---
-            # Solo si está activado en config y existe el ejecutable
             if HAS_FAST and not calidad.startswith("html_") and conf.get('fast_enabled', True):
                 print(f"🚀 Usando Fast para: {url_descarga}")
                 opts.update({
@@ -274,7 +319,6 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
 
             # Twitter Fix
             if "twitter.com" in url_descarga or "x.com" in url_descarga:
-                 # Usamos el MISMO User-Agent que en la extracción (Desktop) para no invalidar cookies.
                  opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
             loop = asyncio.get_running_loop()
@@ -284,15 +328,12 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
 
                 except Exception as e:
                     # FIX: WinError 32 (El archivo está siendo usado)
-                    # A veces Fast tarda en liberar el archivo antes de que yt-dlp lo renombre.
                     str_err = str(e)
                     
                     if "WinError 32" in str_err or "used by another process" in str_err:
                         print("⚠️ Detectado conflicto de archivos (WinError 32). Intentando recuperar...")
-                        # ... (resto del código de recuperación) ...
-                        await asyncio.sleep(2) # Esperamos a que se libere
+                        await asyncio.sleep(2) 
                         
-                        # Intentamos recuperar si el archivo final no existe pero el temp sí
                         posible_temp = f"{base_name}.temp.mp4"
                         posible_final = f"{base_name}.mp4"
                         
@@ -303,7 +344,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                             except Exception as ren_err:
                                 print(f"❌ Error al renombrar manual: {ren_err}")
                     else:
-                        raise e # Si no es ninguno de los anteriores, lanzamos la excepción normal
+                        raise e 
             
             if calidad == "mp3": final = f"{base_name}.mp3"
             else:
@@ -312,29 +353,74 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                         final = base_name+e
                         break
         
-        # --- SUBIDA A TELEGRAM ---
+        # --- POST-PROCESADO: DETECCION DE TIPO Y RENOMBRAMIENTO ---
         if not final or not os.path.exists(final):
-            await status.edit("❌ **Error de descarga.**\nEl enlace puede estar protegido (DRM) o expiró.")
+            await status.edit("❌ **Error de descarga.**\nEl enlace puede estar protegido o expiró.")
             return
         
-        file_size = os.path.getsize(final)
-        # Límite global seguro (1.9GB)
+        # Si venimos de descarga directa sin extensión clara
+        # Intentamos detectar si es video por firma o simplemente asumimos Documento si no parece video
+        is_video = False
         
+        # Lista de extensiones de video comunes
+        vid_exts = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.m4v']
+        
+        # Detectar extensión actual
+        _, ext = os.path.splitext(final)
+        if ext.lower() in vid_exts:
+            is_video = True
+        elif is_direct_download:
+            # Si descargamos de mediafire, a veces el archivo no tiene extensión si usamos aria2 con output fijo
+            # Intentar ver si el nombre original del link tenía extensión
+            # O simplemente ver si es reproducible.
+            
+            # Simple check: Si el usuario pidió MP3, es audio.
+            if calidad == "mp3": is_video = False
+            else:
+                # Si no tiene extensión, intentar renombrar con la del link original si existe
+                if not ext:
+                    # Intento muy básico de sacar nombre del url mediafire original
+                    # url: .../file/xyz/Nombre_Archivo.rar/file
+                    possible_name = url.split('/')[-2] if '/file/' in url else "downloaded_file"
+                    if '.' in possible_name:
+                        new_ext = os.path.splitext(possible_name)[1]
+                        new_final = final + new_ext
+                        os.rename(final, new_final)
+                        final = new_final
+                        ext = new_ext
+                
+                if ext.lower() in vid_exts: is_video = True
+                else: is_video = False
+
+        # Forzar is_video si yt-dlp fue usado exitosamente (generalmente descarga videos), salvo mp3
+        if not is_direct_download and calidad != "mp3":
+            is_video = True
+
+        file_size = os.path.getsize(final)
         await status.edit("📝 **Procesando Metadatos...**")
         w, h, dur = 0, 0, 0
         thumb = None
         
-        if final.lower().endswith(('.mp3', '.m4a')):
-            dur = await get_audio_dur(final)
+        # SI ES VIDEO O AUDIO
+        if is_video or final.lower().endswith(('.mp3', '.m4a')):
+            if final.lower().endswith(('.mp3', '.m4a')):
+                dur = await get_audio_dur(final)
+            else:
+                thumb = await get_thumb(final, chat_id, ts)
+                w, h, dur = await get_meta(final)
         else:
-            thumb = await get_thumb(final, chat_id, ts)
-            w, h, dur = await get_meta(final)
+            # ES DOCUMENTO (ZIP, RAR, ETC)
+            # No sacamos thumb ni meta de video
+            pass
         
         files_to_send = [final]
         is_split = False
             
-        # --- LÓGICA DE CORTE (SPLIT) ---
-        if file_size > TG_LIMIT and calidad != "mp3":
+        # --- LÓGICA DE CORTE (SPLIT) - SOLO SI ES VIDEO ---
+        # Si es un ZIP de 3GB, Telegram permite hasta 2GB (4GB con Premium, bot tiene 2GB limit por API a veces)
+        # Si es Documento > 2GB, fallará. Split de ZIPs es complejo.
+        # Por ahora solo cortamos VIDEO.
+        if is_video and file_size > TG_LIMIT and calidad != "mp3":
             from utils import split_video_generic, format_bytes
             
             sz_fmt = format_bytes(file_size)
@@ -348,7 +434,6 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             )
             
             loop = asyncio.get_running_loop()
-            # Reutilizamos la lógica del Modo Party
             new_files = await loop.run_in_executor(None, lambda: split_video_generic(final, 'parts', num_parts))
             
             if new_files:
@@ -362,40 +447,49 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             msg_label = f"📤 **Subiendo Parte {i+1}/{len(files_to_send)}...**" if is_split else "📤 **Subiendo...**"
             await status.edit(msg_label)
             
-            # Recalcular duración si es parte cortada
             cur_dur = dur
             if is_split:
                  _, _, cur_dur = await get_meta(f_path)
             
             cap = ""
+            # Caption solo si conf tiene meta activado
             if conf['meta']:
-                t = datos.get('titulo','Multimedia')
+                t = datos.get('titulo','Archivo')
+                # Si es mediafire y tenemos filename en path, usarlo
+                if is_direct_download: t = os.path.basename(f_path)
+                
                 if is_split: t += f" [Parte {i+1}/{len(files_to_send)}]"
                 
-                if conf['lang'] == 'es': t = await traducir_texto(t)
+                if conf['lang'] == 'es' and not is_direct_download: t = await traducir_texto(t) # Traducir solo si no es filename literal
+                
                 tags = [f"#{x.replace(' ','_')}" for x in (datos.get('tags') or [])[:10]]
-                res_str = f"{w}x{h}" if w else "Audio"
-                cap = f"🎬 **{t}**\n⚙️ {res_str} | ⏱ {time.strftime('%H:%M:%S', time.gmtime(cur_dur))}\n{' '.join(tags)}"[:1024]
+                res_str = f"{w}x{h}" if w else ("Audio" if calidad=="mp3" else "Archivo")
+                cap = f"🎬 **{t}**\n⚙️ {res_str}"
+                if cur_dur: cap += f" | ⏱ {time.strftime('%H:%M:%S', time.gmtime(cur_dur))}"
+                if tags: cap += f"\n{' '.join(tags)}"
+                cap = cap[:1024]
 
-            act = enums.ChatAction.UPLOAD_AUDIO if calidad == "mp3" else (enums.ChatAction.UPLOAD_DOCUMENT if conf.get('doc_mode') else enums.ChatAction.UPLOAD_VIDEO)
+            act = enums.ChatAction.UPLOAD_AUDIO if calidad == "mp3" else (enums.ChatAction.UPLOAD_VIDEO if is_video else enums.ChatAction.UPLOAD_DOCUMENT)
             
             res = None
             try:
+                # DECISIÓN FINAL DE ENVÍO
                 if calidad == "mp3":
                      res = await client.send_audio(chat_id, f_path, caption=cap, duration=cur_dur, thumb=thumb, progress=progreso, progress_args=(status, [time.time(),0], act), reply_to_message_id=msg_orig.id)
-                elif conf.get('doc_mode'):
-                    res = await client.send_document(chat_id, f_path, caption=cap, thumb=thumb, progress=progreso, progress_args=(status, [time.time(),0], act), reply_to_message_id=msg_orig.id)
-                else:
+                elif is_video and not conf.get('doc_mode'):
+                    # ENVIAR COMO VIDEO
                     res = await client.send_video(chat_id, f_path, caption=cap, width=w, height=h, duration=cur_dur, thumb=thumb, progress=progreso, progress_args=(status, [time.time(),0], act), reply_to_message_id=msg_orig.id)
+                else:
+                    # ENVIAR COMO DOCUMENTO (ZIP, RAR, o Video si doc_mode activo)
+                    res = await client.send_document(chat_id, f_path, caption=cap, thumb=thumb, progress=progreso, progress_args=(status, [time.time(),0], act), reply_to_message_id=msg_orig.id)
             except Exception as e:
                 print(f"❌ Error subiendo parte {i+1}: {e}")
-                # Si falla una parte, continuamos con las otras? Mejor notificar.
                 await client.send_message(chat_id, f"❌ Error al subir parte {i+1}: {e}")
 
-            # Solo guardamos en DB si NO es split y NO es m3u8 (dinámico)
+            # Guardar en DB solo si es video o audio estándar, para evitar cachear temporales raros
+            # O si es documento válido y tiene ID.
             if res and vid_id and not calidad.startswith("html_") and not is_split and "m3u8" not in url:
                 if vid_id not in downloads_db: downloads_db[vid_id] = {}
-                # Intentar obtener file_id de audio, video o documento
                 fid = None
                 if res.audio: fid = res.audio.file_id
                 elif res.video: fid = res.video.file_id
