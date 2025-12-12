@@ -10,6 +10,8 @@ from database import get_config, url_storage, hashtag_db, can_download, cancel_a
 from utils import format_bytes, limpiar_url, sel_cookie, resolver_url_facebook, descargar_galeria, scan_channel_history
 import shutil
 import os # Asegurar os
+from io import BytesIO
+import aiohttp # Para descargar cover manual
 # Extractor JAV (Requests + Base64)
 from jav_extractor import extraer_jav_directo
 # Sniffer Manual (Playwright - Solo si se activa botón)
@@ -599,7 +601,20 @@ async def analyze(c, m):
         # ----------------------------
 
         if valid_cover:
-            await c.send_photo(cid, meta['cover'], caption=txt, reply_markup=kb)
+            # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(meta['cover']) as resp:
+                        if resp.status == 200:
+                            photo_bytes = BytesIO(await resp.read())
+                            photo_bytes.name = "cover.jpg" # Ayuda a Pyrogram a detectar formato
+                            await c.send_photo(cid, photo_bytes, caption=txt, reply_markup=kb)
+                        else:
+                            # Fallback si falla descarga (403/404)
+                             await c.send_message(cid, txt, reply_markup=kb)
+            except Exception as e:
+                print(f"⚠️ Error enviando cover {meta['cover']}: {e}")
+                await c.send_message(cid, txt, reply_markup=kb)
         else:
             await c.send_message(cid, txt, reply_markup=kb)
         return
