@@ -732,17 +732,7 @@ async def analyze(c, m):
                 await c.send_message(cid, txt, reply_markup=kb)
         else:
             await c.send_message(cid, txt, reply_markup=kb)
-        return                     # Priorizar WebP para preview (más ligero) o Original
-                     first_ch = chapters[0]
-                     if first_ch.get('webp'):
-                         meta['cover'] = first_ch['webp'][0]
-                     elif first_ch.get('original'):
-                         meta['cover'] = first_ch['original'][0]
-                     
-                     valid_cover = meta.get('cover') and meta['cover'].startswith("http")
-             except Exception as e:
-                 print(f"⚠️ Smart Cover Error: {e}")
-        # ----------------------------
+
 
         if valid_cover:
             # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
