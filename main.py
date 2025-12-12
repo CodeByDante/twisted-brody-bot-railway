@@ -372,17 +372,9 @@ async def cb(c, q):
             await msg.edit_caption(txt_dl, reply_markup=kb_dl)
             return
 
-    # --- HANDLER SYNC SETUP BUTTON ---
+    # --- HANDLER SYNC SETUP BUTTON REMOVED ---
     elif data == "setup_dump":
-        await msg.edit_text(
-            "📢 **Conectar Canal Privado**\n\n"
-            "1. Añádeme como **Administrador** a tu canal privado.\n"
-            "2. **Reenvíame** cualquier mensaje de ese canal aquí mismo.\n"
-            "3. Yo detectaré el ID y lo guardaré.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]])
-        )
-        url_storage[cid] = {'setup_mode': 'wait_forward'}
-        return
+        return await q.answer("❌ Función desactivada.", show_alert=True)
 
     await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
 
@@ -399,87 +391,10 @@ async def start(c, m):
     
     await m.reply_text("⚙️ **Configuración Bot Pro**", reply_markup=gen_kb(get_config(m.chat.id)))
 
-# --- SYNC MASTER COMMAND ---
-@app.on_message(filters.regex(r"(?i)^/twisted brody manga flow$")) # Case insensitive regex
-async def sync_master_cmd(c, m):
-    from database import global_config, save_global_config
-    
-    dump_id = global_config.get('dump_channel_id')
-    
-    if not dump_id:
-        # Modo Setup
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Conectar Canal Privado", callback_data="setup_dump")]
-        ])
-        await m.reply(
-            "⚠️ **Falta Configuración**\n\n"
-            "Para activar el sistema de sincronización, necesito un Canal Privado donde almacenar los archivos.",
-            reply_markup=kb,
-            quote=True
-        )
-        return
-
-    # Modo Sync
-    from manga_service import sync_mangas_incremental
-    status = await m.reply("🔄 **Iniciando Sincronización...**\n(Comparando Firebase vs Cache local)", quote=True)
-    await sync_mangas_incremental(c, status)
-
-# --- EXPLICIT SETUP COMMAND ---
-@app.on_message(filters.regex(r"(?i)^/twisted$"))
-async def explicit_setup_cmd(c, m):
-    from database import global_config
-    
-    dump_id = global_config.get('dump_channel_id')
-    
-    if not dump_id:
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Conectar Canal Privado", callback_data="setup_dump")]
-        ])
-        await m.reply(
-            "⚠️ **Configuración Necesaria**\n\n"
-            "Para usar el Sistema de Mangas, primero debes conectar un **Canal Privado** que servirá como base de datos infinita.\n\n"
-            "Toca el botón abajo para empezar 👇",
-            reply_markup=kb,
-            quote=True
-        )
-    else:
-        # Si ya está configurado, lanzar SYNC INCREMENTAL
-        from manga_service import sync_mangas_incremental
-        status = await m.reply("🔄 **Iniciando Sincronización Automática...**\n(Subiendo mangas faltantes al Canal Privado)", quote=True)
-        await sync_mangas_incremental(c, status)
-
-# --- RECOVER COMMAND ---
-@app.on_message(filters.regex(r"(?i)^/twisted recover$"))
-async def recover_cmd(c, m):
-    from manga_service import recover_cache_from_history
-    status = await m.reply("🧠 **Analizando Canal Privado...**", quote=True)
-    await recover_cache_from_history(c, status)
-
-# --- SETUP FORWARD LISTENER ---
-@app.on_message(filters.forwarded)
-async def setup_forward_listener(c, m):
-    cid = m.chat.id
-    st = url_storage.get(cid)
-    
-    if st and st.get('setup_mode') == 'wait_forward':
-        if m.forward_from_chat and m.forward_from_chat.type == enums.ChatType.CHANNEL:
-            channel_id = m.forward_from_chat.id
-            title = m.forward_from_chat.title
-            
-            from database import global_config, save_global_config
-            global_config['dump_channel_id'] = channel_id
-            save_global_config()
-            
-            url_storage.pop(cid, None) # Limpiar estado
-            
-            await m.reply(
-                f"✅ **Canal Configurado Exitosamente**\n"
-                f"📌 **Nombre:** {title}\n"
-                f"🆔 **ID:** `{channel_id}`\n\n"
-                f"Ahora ejecuta de nuevo: `/twisted brody manga flow`"
-            )
-        else:
-            await m.reply("❌ **Error:** Debes reenviar un mensaje desde un CANAL (no grupo ni usuario).")
+# --- SYNC MASTER COMMAND REMOVED ---
+# --- EXPLICIT SETUP COMMAND REMOVED ---
+# --- RECOVER COMMAND REMOVED ---
+# --- SETUP FORWARD LISTENER REMOVED ---
 
 @app.on_message(filters.command("menu"))
 async def menu_help(c, m):
@@ -765,6 +680,7 @@ async def analyze(c, m):
         # Si Auto = Max, descargamos ZIP Original directo
         if conf.get('q_auto') == 'max':
              status_msg = await c.send_message(cid, f"⚙️ **Auto-Max detectado:** Iniciando descarga ZIP Original...")
+             # Start download directly
              task = asyncio.create_task(process_manga_download(
                 c, cid, meta, 'zip', 'original', status_msg, 
                 doc_mode=conf.get('doc_mode', False),
@@ -773,8 +689,6 @@ async def analyze(c, m):
              add_active(cid, status_msg.id, task)
              task.add_done_callback(lambda t: remove_active(cid, status_msg.id))
              return
-        # -----------------------
-        
         # -----------------------
         
         kb = InlineKeyboardMarkup([
@@ -789,7 +703,6 @@ async def analyze(c, m):
                f"👤 **Autor:** {meta['author']}\n\n"
                f"Elige el tipo de archivo:")
         
-        
         valid_cover = meta.get('cover') and meta['cover'].startswith("http")
         
         # --- SMART COVER FALLBACK ---
@@ -798,7 +711,28 @@ async def analyze(c, m):
              try:
                  chapters = await get_manga_chapters(manga_id)
                  if chapters:
-                     # Priorizar WebP para preview (más ligero) o Original
+                     first_ch = chapters[0]
+                     # Try original then webp
+                     if first_ch.get('original'):
+                         meta['cover'] = first_ch['original'][0]
+                         valid_cover = True
+                     elif first_ch.get('webp'):
+                         meta['cover'] = first_ch['webp'][0]
+                         valid_cover = True
+                     
+                     # Actualizar storage con la nueva cover
+                     url_storage[cid]['manga_data'] = meta
+             except: pass
+
+        if valid_cover:
+            try:
+                await c.send_photo(cid, meta['cover'], caption=txt, reply_markup=kb)
+            except Exception as e:
+                # Si falla foto (ej extension rara), enviamos texto
+                await c.send_message(cid, txt, reply_markup=kb)
+        else:
+            await c.send_message(cid, txt, reply_markup=kb)
+        return                     # Priorizar WebP para preview (más ligero) o Original
                      first_ch = chapters[0]
                      if first_ch.get('webp'):
                          meta['cover'] = first_ch['webp'][0]

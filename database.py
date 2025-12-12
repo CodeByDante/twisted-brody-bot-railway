@@ -10,57 +10,24 @@ url_storage = {}    # <-- Esta es la variable que te faltaba
 user_config = {}    
 downloads_db = {}   
 hashtag_db = {}     # <-- Base de datos de hashtags
-manga_cache = {}    # <-- Cache de mangas (file_ids)
 active_downloads = {} # {chat_id: {msg_id: future/task}}
 user_cooldowns = {}   # {chat_id: timestamp}
-
-# Nueva config global del servidor (no por usuario)
-global_config = {}  # {dump_channel_id: -100xxx}
-DB_GLOBAL = os.path.join(DATA_DIR, "global_config.json")
 
 # --- FUNCIONES ---
 
 def cargar_db():
-    global downloads_db, manga_cache
+    global downloads_db
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, 'r') as f:
                 downloads_db.update(json.load(f))
         except:
             downloads_db = {}
-    
-    if os.path.exists(DB_CACHE):
-        try:
-            with open(DB_CACHE, 'r') as f:
-                manga_cache.update(json.load(f))
-        except:
-            manga_cache = {}
-
-    if os.path.exists(DB_GLOBAL):
-        try:
-            with open(DB_GLOBAL, 'r') as f:
-                global_config.update(json.load(f))
-        except:
-            pass
 
 def guardar_db():
     try:
         with open(DB_FILE, 'w') as f:
             json.dump(downloads_db, f, indent=4)
-    except:
-        pass
-
-def save_manga_cache():
-    try:
-        with open(DB_CACHE, 'w') as f:
-            json.dump(manga_cache, f, indent=4)
-    except:
-        pass
-
-def save_global_config():
-    try:
-        with open(DB_GLOBAL, 'w') as f:
-            json.dump(global_config, f, indent=4)
     except:
         pass
 
