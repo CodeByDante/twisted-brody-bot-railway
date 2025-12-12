@@ -34,7 +34,6 @@ def cargar_db():
             with open(DB_CACHE, 'r') as f:
                 manga_cache.update(json.load(f))
         except:
-        except:
             manga_cache = {}
 
     if os.path.exists(DB_GLOBAL):
@@ -55,6 +54,13 @@ def save_manga_cache():
     try:
         with open(DB_CACHE, 'w') as f:
             json.dump(manga_cache, f, indent=4)
+    except:
+        pass
+
+def save_global_config():
+    try:
+        with open(DB_GLOBAL, 'w') as f:
+            json.dump(global_config, f, indent=4)
     except:
         pass
 
@@ -87,7 +93,7 @@ def get_config(chat_id):
             'doc_mode': False,
             'replay_enabled': False, # <--- Nuevo modo replay
             'party_mode': False,
-    'ai_mode': False, # Modo Party
+            'ai_mode': False, # Modo Party
         }
     return user_config[chat_id]
 
