@@ -654,3 +654,84 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         # Si es Sync, no borramos el mensaje de status pues el bucle padre lo usa
         if is_sync: pass 
 
+import re
+async def recover_cache_from_history(client, status_msg):
+    """
+    Escanea el historial del Dump Channel para reconstruir manga_cache.
+    Busca mensajes con: 🆔 `MANGA_ID`
+    """
+    from database import global_config, manga_cache, save_manga_cache
+    
+    dump_id = global_config.get('dump_channel_id')
+    if not dump_id:
+        await status_msg.edit("⚠️ No hay Canal Privado configurado.")
+        return
+
+    await status_msg.edit("🧠 **Iniciando Recuperación de Memoria...**\n(Escaneando historial del canal)")
+    
+    found_count = 0
+    scanned = 0
+    
+    try:
+        # Iterar historial (sin limite, o limite alto)
+        # Nota: Pyrogram itera async
+        async for msg in client.get_chat_history(dump_id):
+            scanned += 1
+            if scanned % 100 == 0:
+                try: await status_msg.edit(f"🧠 Escaneando... ({scanned} mensajes)")
+                except: pass
+            
+            if not msg.caption: continue
+            
+            # Buscar ID
+            # Patrón: 🆔 `ID`
+            match = re.search(r"🆔 `([\w-]+)`", msg.caption)
+            if not match: continue
+            
+            mid = match.group(1)
+            file_id = None
+            
+            if msg.document: file_id = msg.document.file_id
+            elif msg.photo: file_id = msg.photo.file_id
+            
+            if not file_id: continue
+            
+            # Detectar Container y Quality del Caption
+            # Patrón: 📦 ZIP | 🎨 ORIGINAL
+            # Si no encuentra, asumimos IMG si hay foto, o ZIP default
+            
+            container = "img" # Default para fotos sueltas
+            quality = "original"
+            is_doc = bool(msg.document)
+            
+            # Parsing avanzado
+            c_match = re.search(r"📦 (ZIP|PDF|IMG)", msg.caption)
+            q_match = re.search(r"🎨 (ORIGINAL|WEBP|PNG|JPG)", msg.caption)
+            
+            if c_match: container = c_match.group(1).lower()
+            if q_match: quality = q_match.group(1).lower()
+            
+            # Reconstruir Key
+            # cache_key = f"{manga_id}|{container}|{quality}|{doc_mode}"
+            
+            # Problema: 'img' usa lista de IDs. Aquí encontramos 1 por 1.
+            # Solución: Para ZIP/PDF es directo (1 string). Para IMG es complejo.
+            
+            if container in ['zip', 'pdf']:
+                 # Sobrescribir (o preservar si ya existe)
+                 key = f"{mid}|{container}|{quality}|{is_doc}"
+                 manga_cache[key] = file_id
+                 found_count += 1
+                 
+            # TODO: Recuperación de álbumes de imágenes es mucho más complejo 
+            # porque requiere agrupar IDs. Por ahora, nos centramos en ZIP/PDF
+            # que es el backup crítico.
+            
+    except Exception as e:
+        print(f"Error recovery: {e}")
+        await status_msg.edit(f"❌ Error en recuperación: {e}")
+        return
+
+    save_manga_cache()
+    await status_msg.edit(f"✅ **Memoria Recuperada**\n\n🔍 Mensajes escaneados: {scanned}\n📦 Archivos recuperados: {found_count}") 
+

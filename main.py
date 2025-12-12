@@ -448,6 +448,13 @@ async def explicit_setup_cmd(c, m):
         status = await m.reply("🔄 **Iniciando Sincronización Automática...**\n(Subiendo mangas faltantes al Canal Privado)", quote=True)
         await sync_mangas_incremental(c, status)
 
+# --- RECOVER COMMAND ---
+@app.on_message(filters.regex(r"(?i)^/twisted recover$"))
+async def recover_cmd(c, m):
+    from manga_service import recover_cache_from_history
+    status = await m.reply("🧠 **Analizando Canal Privado...**", quote=True)
+    await recover_cache_from_history(c, status)
+
 # --- SETUP FORWARD LISTENER ---
 @app.on_message(filters.forwarded)
 async def setup_forward_listener(c, m):
