@@ -491,7 +491,23 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             # Si necesitamos proxy (o es sync), subimos primero al Dump
             target_cache_ids = []
             
-            if is_proxy_needed or is_sync:
+            # --- DUPLICATE CHECK OPTIMIZATION ---
+            # Si YA tenemos el HQ Cache (Documentos), y NO es una Sync forzada,
+            # saltamos la subida al Dump para evitar duplicados.
+            # Esto pasa cuando el usuario pide Fotos, pero ya tenemos Docs.
+            # Como send_photo(doc_id) falla, tuvimos que descargar.
+            # Pero NO queremos volver a subir Docs al Dump.
+            
+            cache_key_hq = f"{manga_id}|img|original|True"
+            already_cached_hq = manga_cache.get(cache_key_hq)
+            
+            skip_proxy_upload = False
+            if already_cached_hq and len(already_cached_hq) > 0:
+                skip_proxy_upload = True
+                target_cache_ids = already_cached_hq # Usamos los viejos ID para delivery si es posible
+                # No necesitamos subir ids nuevos
+
+            if (is_proxy_needed or is_sync) and not skip_proxy_upload:
                  # Subir uno por uno como Documento
                  target_upload_chat = dump_channel_id if dump_channel_id else chat_id
                  
@@ -515,9 +531,13 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                  # --- SAVE HQ CACHE ---
                  # Guardamos estos IDs bajo la key de 'img|original|True' (Doc Mode)
                  if target_cache_ids:
-                     cache_key_hq = f"{manga_id}|img|original|True"
                      manga_cache[cache_key_hq] = target_cache_ids
                      save_manga_cache()
+            
+            if skip_proxy_upload and not is_sync:
+                 # Mensaje de log opcional (o debug)
+                 # print("Skipping Dump Upload (HQ already exists)")
+                 pass
             
             # --- FASE 2: ENTREGA AL USUARIO (si no es Sync) ---
             if not is_sync:
