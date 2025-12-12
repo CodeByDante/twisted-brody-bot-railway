@@ -104,20 +104,139 @@ async def get_manga_chapters(manga_id):
         print(f"❌ Excepción Chapters: {e}")
         return []
 
-async def download_image(session, url):
-    """Descarga una imagen y retorna sus bytes."""
-    try:
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                return await resp.read()
     except: pass
     return None
+
+async def get_all_mangas_paginated():
+    """Obtiene una lista ligera de TODOS los mangas (Title, ID, Cover) para el catálogo."""
+    url = f"{FIREBASE_BASE_URL}:runQuery"
+    # Query para traer solo campos necesarios y ordenar (simulado)
+    # Firebase REST es limitado, traemos todo y filtramos en RAM (Para ~50 mangas está bien)
+    payload = {
+        "structuredQuery": {
+            "from": [{ "collectionId": "mangas" }],
+            "limit": 100 # Safety limit
+        }
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                if resp.status != 200: return []
+                data = await resp.json()
+                
+                mangas = []
+                for item in data:
+                    doc = item.get('document', {})
+                    if not doc: continue
+                    
+                    # ID está en name: .../documents/mangas/ID
+                    full_name = doc.get('name', '')
+                    mid = full_name.split('/')[-1]
+                    
+                    fields = doc.get('fields', {})
+                    title = fields.get('title', {}).get('stringValue', 'Sin Título')
+                    author = fields.get('author', {}).get('stringValue', 'Desconocido')
+                    cover = fields.get('cover', {}).get('stringValue') or fields.get('image', {}).get('stringValue')
+                    
+                    mangas.append({
+                        'id': mid,
+                        'title': title, # Strip para limpieza
+                        'author': author,
+                        'cover': cover
+                    })
+                
+                # Ordenar alfabéticamente
+                mangas.sort(key=lambda x: x['title'])
+                return mangas
+    except Exception as e:
+        print(f"Error Manga Pagination: {e}")
+        return []
+
+from database import global_config, save_manga_cache
+async def sync_mangas_incremental(client, status_msg):
+    """
+    Sincronización Pasiva:
+    1. Descarga lista de mangas.
+    2. Compara con caché local.
+    3. Descarga -> Sube al Dump Channel -> Guarda ID.
+    """
+    dump_id = global_config.get('dump_channel_id')
+    if not dump_id:
+        await status_msg.edit("⚠️ Error: No hay Canal Privado configurado.")
+        return
+
+    mangas = await get_all_mangas_paginated()
+    if not mangas:
+        await status_msg.edit("⚠️ No se encontraron mangas en Firebase.")
+        return
+
+    new_count = 0
+    total_processed = 0
+    
+    for m in mangas:
+        mid = m['id']
+        # Clave base para ZIP Original (El formato estándar de backup)
+        # Nota: Guardamos "original" y "zip" como estándar de preservación
+        cache_key_zip = f"{mid}|zip|original|False"
+        
+        # Si YA lo tenemos, skip
+        if cache_key_zip in manga_cache:
+            continue
+            
+        # Si NO lo tenemos, procedemos
+        new_count += 1
+        await status_msg.edit(f"🔄 **Sincronizando: {m['title']}**\n(Manga Nuevo detectado)...")
+        
+        try:
+            # Reutilizamos la lógica de descarga pero FORZAMOS:
+            # - container='zip'
+            # - quality='original'
+            # - doc_mode=True (Para que process_manga_download devuelva Document)
+            # - Pero OJO: process_manga_download envía al chat_id que le pasemos.
+            #   Así que le pasamos el DUMP_CHANNEL_ID.
+            
+            # Hack: Process manga download sends messages. We want to capture the file_id.
+            # It already saves to cache if we pass the right flags.
+            
+            # Vamos a llamar a process_manga_download apuntando al Dump Channel
+            # Y le pasamos un "dummy message" si es necesario o manejamos el status allí.
+            
+            # Problema: process_manga_download edita `status_msg`. 
+            # No queremos que edite el mensaje del usuario con "Subiendo parte 1...".
+            # Solución: Creamos un mensaje dummy en el dump channel para que lo edite?
+            # Mejor: Modificamos process_manga_download para aceptar `silent=True`?
+            # Por ahora, dejemos que edite el mensaje del usuario (es informativo de "Syncing...").
+            
+            # Pero process_manga envía el archivo FINAL al `chat_id`.
+            # Así que SÍ debe ser `dump_id`.
+            
+            await process_manga_download(
+                client, 
+                dump_id, # <--- ENVIAR AL CANAL PRIVADO
+                m, 
+                'zip', 
+                'original', 
+                status_msg, # <--- Edita el mensaje del admin (feedback visual)
+                doc_mode=True, # Forzar documento
+                group_mode=True,
+                is_sync=True # Flag para no borrar el status_msg al final
+            )
+            
+            # Sleep Anti-Flood
+            await asyncio.sleep(5)
+            
+        except Exception as e:
+            print(f"Error syncing {mid}: {e}")
+            await asyncio.sleep(2)
+    
+    await status_msg.edit(f"✅ **Sincronización Completada**\nNuevos Mangas procesados: {new_count}")
 
 from database import manga_cache, save_manga_cache
 from pyrogram.types import InputMediaPhoto, InputMediaDocument
 from pyrogram.errors import FloodWait
 
-async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg, doc_mode=False, group_mode=True):
+async def process_manga_download(client, chat_id, manga_data, container, quality, status_msg, doc_mode=False, group_mode=True, is_sync=False):
     """
     Descarga, procesa y envía el manga.
     container: 'zip', 'pdf' o 'img'
@@ -129,8 +248,16 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     # --- CACHE CHECK ---
     cache_key = f"{manga_id}|{container}|{quality}|{doc_mode}"
     
+    # 1. Intento Directo
     if cache_key in manga_cache:
         cached_data = manga_cache[cache_key]
+    else:
+        # 2. Smart Fallback: Si el usuario pide NORMAL (doc_mode=False) pero tenemos HQ (doc_mode=True)
+        #    Usamos el archivo HQ.
+        fallback_key = f"{manga_id}|{container}|{quality}|True"
+        cached_data = manga_cache.get(fallback_key)
+    
+    if cached_data:
         found_in_cache = False
         
         try:
@@ -461,3 +588,6 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     finally:
         try: shutil.rmtree(base_tmp)
         except: pass
+        # Si es Sync, no borramos el mensaje de status pues el bucle padre lo usa
+        if is_sync: pass 
+

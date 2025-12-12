@@ -3,7 +3,7 @@ import asyncio
 import yt_dlp
 import time
 import re
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument, InputMediaVideo, WebAppInfo, MenuButtonWebApp
 from config import API_ID, API_HASH, BOT_TOKEN, DATA_DIR, COOKIE_MAP
 from database import get_config, url_storage, hashtag_db, can_download, cancel_all, add_active, remove_active
@@ -69,7 +69,9 @@ def gen_kb(conf):
         [InlineKeyboardButton(f"⚙️ Auto: {txt_auto}", callback_data="menu|auto")],
         [InlineKeyboardButton(f"🌐 Idioma: {lang_flag}", callback_data="toggle|lang")],
         
-        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
+        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")],
+        # --- NEW BUTTON ---
+        [InlineKeyboardButton("📚 Twisted Brody Manga Flow", callback_data="catalog|home")]
     ])
     
     return InlineKeyboardMarkup(kb)
@@ -259,6 +261,130 @@ async def cb(c, q):
     elif data == "menu|main": pass
     elif data == "start": pass # Para el botón de volver del start
 
+    elif data == "menu|main": pass
+    elif data == "start": pass # Para el botón de volver del start
+
+    # --- CATALOGO MANGA HANDLERS ---
+    elif data.startswith("catalog|"):
+        from manga_service import get_all_mangas_paginated, get_manga_metadata
+        
+        mode = data.split("|")[1]
+        
+        if mode == "home" or mode == "nav":
+            # catalog|nav|PAGE_INDEX
+            page = 0
+            if mode == "nav": page = int(data.split("|")[2])
+            
+            # Obtener lista (Cachear esto en memoria sería ideal, pero por ahora directo)
+            # Como es paginado visual, traemos todo y mostramos 1.
+            # OPTIMIZACIÓN: Guardar lista en url_storage para no pedir a Firebase en cada click
+            
+            st = url_storage.get(cid)
+            mangas = []
+            if st and 'catalog_list' in st:
+                mangas = st['catalog_list']
+            else:
+                await q.answer("🔄 Cargando catálogo...", show_alert=False)
+                mangas = await get_all_mangas_paginated()
+                if not mangas:
+                     return await q.answer("⚠️ Catálogo vacío o error de conexión.", show_alert=True)
+                # Save to session (expire after X time? For now keep it simple)
+                if not st: url_storage[cid] = {}
+                url_storage[cid]['catalog_list'] = mangas
+            
+            # Validar índice
+            if page < 0: page = len(mangas) - 1
+            if page >= len(mangas): page = 0
+            
+            current = mangas[page]
+            
+            # Botonera
+            # [ ⬅️ ] [ 1/50 ] [ ➡️ ]
+            # [ 📥 VER MANGA ]
+            # [ 🔍 Buscar ] [ 🔙 Salir ]
+            
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("⬅️", callback_data=f"catalog|nav|{page-1}"),
+                    InlineKeyboardButton(f"{page+1} / {len(mangas)}", callback_data="ignore"),
+                    InlineKeyboardButton("➡️", callback_data=f"catalog|nav|{page+1}")
+                ],
+                [InlineKeyboardButton("📥 VER MANGA", callback_data=f"catalog|sel|{current['id']}")],
+                [InlineKeyboardButton("🔍 Buscar", callback_data="catalog|search"),
+                 InlineKeyboardButton("🔙 Salir", callback_data="menu|main")]
+            ])
+            
+            txt = (f"📚 **Twisted Brody Manga Flow**\n\n"
+                   f"📌 **{current['title']}**\n"
+                   f"👤 {current['author']}")
+            
+            # Intentar mostrar portada
+            cover_url = current.get('cover')
+            if cover_url and cover_url.startswith("http"):
+                 try:
+                     # Si el mensaje actual YA tiene foto, editamos la media
+                     # Si no, borramos y enviamos nuevo (más seguro visualmente)
+                     # Para "navegación fluida", idealmente usamos InputMediaPhoto
+                     media = InputMediaPhoto(cover_url, caption=txt)
+                     
+                     try:
+                         await msg.edit_media(media, reply_markup=kb)
+                     except:
+                         # Si falla (ej. mensaje texto), borrar y enviar
+                         await msg.delete()
+                         await c.send_photo(cid, cover_url, caption=txt, reply_markup=kb)
+                 except Exception as e:
+                     # Fallback texto
+                     await msg.edit_text(txt, reply_markup=kb)
+            else:
+                await msg.edit_text(txt, reply_markup=kb)
+            return
+
+        elif mode == "sel":
+            mid = data.split("|")[2]
+            # Recuperar metadata full (si hace falta) o usar la lista
+            # Reutilizamos el flujo de "manga_sel"
+            # Necesitamos poner 'manga_data' en storage
+            
+            st = url_storage.get(cid)
+            mangas = st.get('catalog_list', [])
+            target = next((m for m in mangas if m['id'] == mid), None)
+            
+            if not target: return await q.answer("⚠️ Error seleccionando.", show_alert=True)
+            
+            url_storage[cid]['manga_data'] = target
+            
+            # Disparar menú de descarga (reutilizando lógica existente)
+            # Llamamos al handler de "manga_back" para mostrar el menú inicial de opciones
+            # Hack: Modificamos callback data y relanzamos? O replicamos código?
+            # Replicamos código limpio:
+            
+            kb_dl = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
+                 InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
+                [InlineKeyboardButton("🖼 Ver Imágenes", callback_data="manga_sel|img")],
+                [InlineKeyboardButton("🔙 Volver al Catálogo", callback_data=f"catalog|home")]
+            ])
+            
+            txt_dl = (f"📚 **{target['title']}**\n"
+                     f"👤 {target['author']}\n\n"
+                     f"⬇️ **Selecciona formato:**")
+            
+            await msg.edit_caption(txt_dl, reply_markup=kb_dl)
+            return
+
+    # --- HANDLER SYNC SETUP BUTTON ---
+    elif data == "setup_dump":
+        await msg.edit_text(
+            "📢 **Conectar Canal Privado**\n\n"
+            "1. Añádeme como **Administrador** a tu canal privado.\n"
+            "2. **Reenvíame** cualquier mensaje de ese canal aquí mismo.\n"
+            "3. Yo detectaré el ID y lo guardaré.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancelar", callback_data="cancel")]])
+        )
+        url_storage[cid] = {'setup_mode': 'wait_forward'}
+        return
+
     await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
 
 @app.on_message(filters.command("start"))
@@ -273,6 +399,57 @@ async def start(c, m):
         print(f"⚠️ Error setting menu button: {e}")
     
     await m.reply_text("⚙️ **Configuración Bot Pro**", reply_markup=gen_kb(get_config(m.chat.id)))
+
+# --- SYNC MASTER COMMAND ---
+@app.on_message(filters.regex(r"(?i)^/twisted brody manga flow$")) # Case insensitive regex
+async def sync_master_cmd(c, m):
+    from database import global_config, save_global_config
+    
+    dump_id = global_config.get('dump_channel_id')
+    
+    if not dump_id:
+        # Modo Setup
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Conectar Canal Privado", callback_data="setup_dump")]
+        ])
+        await m.reply(
+            "⚠️ **Falta Configuración**\n\n"
+            "Para activar el sistema de sincronización, necesito un Canal Privado donde almacenar los archivos.",
+            reply_markup=kb,
+            quote=True
+        )
+        return
+
+    # Modo Sync
+    from manga_service import sync_mangas_incremental
+    status = await m.reply("🔄 **Iniciando Sincronización...**\n(Comparando Firebase vs Cache local)", quote=True)
+    await sync_mangas_incremental(c, status)
+
+# --- SETUP FORWARD LISTENER ---
+@app.on_message(filters.forwarded)
+async def setup_forward_listener(c, m):
+    cid = m.chat.id
+    st = url_storage.get(cid)
+    
+    if st and st.get('setup_mode') == 'wait_forward':
+        if m.forward_from_chat and m.forward_from_chat.type == enums.ChatType.CHANNEL:
+            channel_id = m.forward_from_chat.id
+            title = m.forward_from_chat.title
+            
+            from database import global_config, save_global_config
+            global_config['dump_channel_id'] = channel_id
+            save_global_config()
+            
+            url_storage.pop(cid, None) # Limpiar estado
+            
+            await m.reply(
+                f"✅ **Canal Configurado Exitosamente**\n"
+                f"📌 **Nombre:** {title}\n"
+                f"🆔 **ID:** `{channel_id}`\n\n"
+                f"Ahora ejecuta de nuevo: `/twisted brody manga flow`"
+            )
+        else:
+            await m.reply("❌ **Error:** Debes reenviar un mensaje desde un CANAL (no grupo ni usuario).")
 
 @app.on_message(filters.command("menu"))
 async def menu_help(c, m):

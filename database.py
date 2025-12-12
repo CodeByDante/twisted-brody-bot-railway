@@ -14,6 +14,10 @@ manga_cache = {}    # <-- Cache de mangas (file_ids)
 active_downloads = {} # {chat_id: {msg_id: future/task}}
 user_cooldowns = {}   # {chat_id: timestamp}
 
+# Nueva config global del servidor (no por usuario)
+global_config = {}  # {dump_channel_id: -100xxx}
+DB_GLOBAL = os.path.join(DATA_DIR, "global_config.json")
+
 # --- FUNCIONES ---
 
 def cargar_db():
@@ -30,7 +34,15 @@ def cargar_db():
             with open(DB_CACHE, 'r') as f:
                 manga_cache.update(json.load(f))
         except:
+        except:
             manga_cache = {}
+
+    if os.path.exists(DB_GLOBAL):
+        try:
+            with open(DB_GLOBAL, 'r') as f:
+                global_config.update(json.load(f))
+        except:
+            pass
 
 def guardar_db():
     try:
