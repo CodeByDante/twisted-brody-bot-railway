@@ -567,6 +567,8 @@ async def analyze(c, m):
              return
         # -----------------------
         
+        # -----------------------
+        
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📦 Descargar ZIP", callback_data="manga_sel|zip"),
              InlineKeyboardButton("📄 Descargar PDF", callback_data="manga_sel|pdf")],
@@ -578,45 +580,9 @@ async def analyze(c, m):
                f"📌 **Título:** {meta['title']}\n"
                f"👤 **Autor:** {meta['author']}\n\n"
                f"Elige el tipo de archivo:")
-               
-        valid_cover = meta.get('cover') and meta['cover'].startswith("http")
         
-        # --- SMART COVER FALLBACK ---
-        # Si no hay portada explícita, usar la primera página del Cap 1
-        if not valid_cover:
-             try:
-                 chapters = await get_manga_chapters(manga_id)
-                 if chapters:
-                     # Priorizar WebP para preview (más ligero) o Original
-                     first_ch = chapters[0]
-                     if first_ch.get('webp'):
-                         meta['cover'] = first_ch['webp'][0]
-                     elif first_ch.get('original'):
-                         meta['cover'] = first_ch['original'][0]
-                     
-                     valid_cover = meta.get('cover') and meta['cover'].startswith("http")
-                     valid_cover = meta.get('cover') and meta['cover'].startswith("http")
-             except Exception as e:
-                 print(f"⚠️ Smart Cover Error: {e}")
-        # ----------------------------
-
-        if valid_cover:
-            # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(meta['cover']) as resp:
-                        if resp.status == 200:
-                            photo_bytes = BytesIO(await resp.read())
-                            photo_bytes.name = "cover.jpg" # Ayuda a Pyrogram a detectar formato
-                            await c.send_photo(cid, photo_bytes, caption=txt, reply_markup=kb)
-                        else:
-                            # Fallback si falla descarga (403/404)
-                             await c.send_message(cid, txt, reply_markup=kb)
-            except Exception as e:
-                print(f"⚠️ Error enviando cover {meta['cover']}: {e}")
-                await c.send_message(cid, txt, reply_markup=kb)
-        else:
-            await c.send_message(cid, txt, reply_markup=kb)
+        # FIX: Eliminada logica de portada para evitar errores
+        await c.send_message(cid, txt, reply_markup=kb)
         return
 
     # --- FUNCIÓN INTERNAL: FALLBACK GALERÍA ---
