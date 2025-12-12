@@ -31,18 +31,9 @@ def gen_kb(conf):
             [InlineKeyboardButton("🔙 Atrás (Salir Modo Party)", callback_data="menu|party_off")]
         ])
 
-    # --- MODO IA (Exclusivo) ---
-    # --- MODO IA (Exclusivo) ---
-    if conf.get('ai_mode'):
-         return InlineKeyboardMarkup([
-             [InlineKeyboardButton("🔙 Atrás (Salir Modo IA)", callback_data="menu|ai_off")]
-         ])
 
-    # --- MODO COMPRESS (Exclusivo) ---
-    if conf.get('compress_mode'):
-         return InlineKeyboardMarkup([
-             [InlineKeyboardButton("🔙 Atrás (Salir Modo Compresor)", callback_data="menu|compress_off")]
-         ])
+
+
 
     c_html = "🟢" if conf['html_mode'] else "🔴"
     c_meta = "🟢" if conf['meta'] else "🔴"
@@ -73,10 +64,7 @@ def gen_kb(conf):
         [InlineKeyboardButton(f"⚙️ Auto: {txt_auto}", callback_data="menu|auto")],
         [InlineKeyboardButton(f"🌐 Idioma: {lang_flag}", callback_data="toggle|lang")],
         
-        [InlineKeyboardButton("✂️ Party (Cortador)", callback_data="menu|party_on"),
-         InlineKeyboardButton("🤖 Modo IA", callback_data="menu|ai_on")],
-        [InlineKeyboardButton("🗜 Comprimir", callback_data="menu|compress_on"),
-         InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
+        [InlineKeyboardButton(f"📦 Formato: {fmt_icon}", callback_data="toggle|fmt")]
     ])
     
     return InlineKeyboardMarkup(kb)
@@ -160,64 +148,11 @@ async def cb(c, q):
         return
     # ---------------------------
 
-    # --- HANDLERS MODO IA ---
-    elif data == "menu|ai_on":
-        conf['ai_mode'] = True
-        await msg.edit_text("🤖 **Modo IA Activo**\n\nSoy Brody. ¿En qué puedo ayudarte?", reply_markup=gen_kb(conf))
-        return
 
-    elif data == "menu|ai_off":
-        conf['ai_mode'] = False
-        await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
-        return
 
-    # --- HANDLERS MODO COMPRESS ---
-    elif data == "menu|compress_on":
-        conf['compress_mode'] = True
-        await msg.edit_text("🗜 **Modo Compresor Activo**\n\nEnvía un video y seleccionaremos cuánto comprimirlo.", reply_markup=gen_kb(conf))
-        return
 
-    elif data == "menu|compress_off":
-        conf['compress_mode'] = False
-        await msg.edit_text("⚙️ **Panel de Configuración**", reply_markup=gen_kb(conf))
-        return
         
-    # --- SELECCION COMPRESION ---
-    elif "compress_sel" in data:
-        crf = int(data.split("|")[1])
-        cid = msg.chat.id
-        
-        st = url_storage.get(cid)
-        if not st or not st.get('file'): return await q.answer("❌ Error: No hay archivo.", show_alert=True)
-        
-        await msg.edit_text(f"⏳ **Comprimiendo video (CRF {crf})...**\nEsto puede tardar un poco según el peso.")
-        
-        fpath = st['file']
-        from utils import compress_video_ffmpeg, format_bytes
-        
-        comp_path = await asyncio.get_running_loop().run_in_executor(None, lambda: compress_video_ffmpeg(fpath, crf=crf))
-        
-        if comp_path:
-            sz_old = os.path.getsize(fpath)
-            sz_new = os.path.getsize(comp_path)
-            saving = sz_old - sz_new
-            pct = (saving / sz_old) * 100 if sz_old > 0 else 0
-            
-            cap = (f"🗜 **Compresión Finalizada**\n\n"
-                   f"📉 **Antes:** {format_bytes(sz_old)}\n"
-                   f"📈 **Ahora:** {format_bytes(sz_new)}\n"
-                   f"💰 **Ahorro:** {format_bytes(saving)} ({pct:.1f}%)")
-            
-            await c.send_video(cid, comp_path, caption=cap)
-            try: os.remove(comp_path)
-            except: pass
-        else:
-            await msg.edit_text("❌ **Error al comprimir.**")
-            
-        try: os.remove(fpath)
-        except: pass
-        url_storage.pop(cid, None)
-        return
+
 
     elif data == "menu|main": pass
     elif data == "start": pass # Para el botón de volver del start
@@ -335,36 +270,7 @@ async def hashtag_replay_handler(c, m):
             
         await status_msg.edit(f"✅ **Reenvío de #{tag} finalizado.**")
 
-# --- AI MODE HANDLER ---
-@app.on_message(filters.text & ~filters.regex(r"^/"))
-async def ai_text_handler(c, m):
-    cid = m.chat.id
-    conf = get_config(cid)
-    
-    if not conf.get('ai_mode'):
-        m.continue_propagation()
-        return
 
-    from ai_brain import ask_gemini
-    from pyrogram import enums
-    
-    await c.send_chat_action(cid, enums.ChatAction.TYPING)
-    resp = await ask_gemini(m.text)
-    
-    # --- TOOL CALL CHECK (IA invoca descarga) ---
-    if "CMD_DL:" in resp:
-        url = resp.split("CMD_DL:")[1].strip()
-        await m.reply(f"🤖 **Entendido.** Procesando enlace: {url}...", quote=True)
-        
-        # Truco: Modificamos el texto del mensaje y llamamos a analyze
-        m.text = url
-        await analyze(c, m)
-        m.stop_propagation()
-        return
-    # --------------------------------------------
-
-    # Evitar que otros handlers (como downloader) procesen el texto
-    m.stop_propagation()
 
 # --- MANGA MINI APP HANDLER ---
 @app.on_message(filters.service & filters.create(lambda _, __, m: m.web_app_data is not None))
@@ -411,45 +317,7 @@ async def party_video_handler(c, m):
     
     await m.reply("✂️ **Modo Party: ¿Cómo quieres cortar?**", quote=True, reply_markup=kb)
 
-# --- COMPRESS MODE HANDLER ---
-@app.on_message(filters.video | filters.document)
-async def compress_video_handler(c, m):
-    cid = m.chat.id
-    conf = get_config(cid)
-    
-    # Check si estamos en modo compress y NO en party (por si acaso, aunque son excluyentes por UI)
-    if not conf.get('compress_mode'):
-        m.continue_propagation()
-        return
 
-    if m.document and m.document.mime_type and not m.document.mime_type.startswith("video"):
-         m.continue_propagation()
-         return 
-
-    wait = await m.reply("⬇️ **Descargando video para Comprimir...**", quote=True)
-    temp_dir = os.path.join(DATA_DIR, f"compress_{cid}")
-    if not os.path.exists(temp_dir): os.makedirs(temp_dir, exist_ok=True)
-    
-    # Usamos nombre seguro
-    fname = "input_video.mp4"
-    fpath = await c.download_media(m, file_name=os.path.join(temp_dir, fname))
-    await wait.delete()
-    
-    if not fpath:
-        await m.reply("❌ Error descargando.")
-        return
-
-    url_storage[cid] = {'compress_step': 'wait_sel', 'file': fpath}
-    
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📉 Ligero (CRF 23)", callback_data="compress_sel|23")],
-        [InlineKeyboardButton("⚖️ Medio (CRF 28)", callback_data="compress_sel|28")],
-        [InlineKeyboardButton("🪨 Fuerte (CRF 35)", callback_data="compress_sel|35")],
-        [InlineKeyboardButton("🔙 Cancelar", callback_data="menu|compress_off")]
-    ])
-    
-    await m.reply("🗜 **Video Recibido**\nSelecciona el nivel de compresión:\n\n*Nota: Mayor CRF = Menor peso, Menor calidad.*", quote=True, reply_markup=kb)
-    m.stop_propagation()
 
 @app.on_message(filters.text & ~filters.regex(r"^/"))
 async def party_text_handler(c, m):

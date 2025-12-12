@@ -5,5 +5,4 @@ deep-translator
 aiohttp
 requests
 gallery-dl
-google-generativeai
 img2pdf
