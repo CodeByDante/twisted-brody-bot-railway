@@ -459,7 +459,7 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
              
              return sent_msg
 
-        # 4. Empaquetado o Envío Directo (IMG BATCH con PROXY)
+        # 4. Empaquetado o Envío Directo (IMG BATCH con PROXY STRICTO)
         from database import global_config
         dump_channel_id = global_config.get('dump_channel_id')
 
@@ -479,117 +479,107 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             if not all_files:
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
-            # --- DETERMINAR DESTINO Y MODO PROXY ---
-            # Si is_sync=True, el chat_id ES el dump channel, así que target_chat = chat_id.
-            # Si is_sync=False, chat_id es el usuario. Si tenemos dump_id config, target_chat = dump_id.
+            # --- FASE 1: PROXY AL DUMP CHANNEL (SIEMPRE COMO DOCUMENTO HQ) ---
+            # Objetivo: Llenar la base de datos con calidad máxima, sin importar qué pidió el usuario.
             
-            target_upload_chat = chat_id
-            is_proxyING = False
+            sent_file_ids_hq = [] # IDs de documentos en el Dump
             
+            is_proxy_needed = False
             if dump_channel_id and str(chat_id) != str(dump_channel_id):
-                 target_upload_chat = dump_channel_id
-                 is_proxyING = True
+                 is_proxy_needed = True
+
+            # Si necesitamos proxy (o es sync), subimos primero al Dump
+            target_cache_ids = []
             
-            # Si estamos en Sync o Proxy, enviamos 1 a 1 para asegurar IDs
-            # Lista para guardar file_ids
-            sent_file_ids = []
-
-            # Nota: Si group_mode=True y es proxy, es risky porque captura IDs de album es diff.
-            # Forzamos group_mode=False si es is_proxyING o is_sync para asegurar cacheo robusto.
-            use_group_mode = False if (is_proxyING or is_sync) else group_mode
-
-            if not use_group_mode:
-                # ENVIAR 1 a 1 (Lento pero Seguro para Cache)
-                for idx, f in enumerate(all_files):
-                    if idx % 5 == 0: await status_msg.edit(f"📤 **Enviando...** {idx+1}/{len(all_files)}")
+            if is_proxy_needed or is_sync:
+                 # Subir uno por uno como Documento
+                 target_upload_chat = dump_channel_id if dump_channel_id else chat_id
+                 
+                 # Si estamos en Sync o Proxy, enviamos 1 a 1 para asegurar IDs y Orden
+                 for idx, f in enumerate(all_files):
+                    if idx % 5 == 0: await status_msg.edit(f"📤 **Sincronizando (Base de Datos)...** {idx+1}/{len(all_files)}")
                     try:
-                        # Enviar al TARGET (Dump o User) with CAPTION
-                        # Caption minimalista para no ensuciar, pero con ID para búsqueda
-                        # ID debe ser searchable
+                        # SIEMPRE DOCUMENTO para el Cache
                         img_cap = f"🆔 `{manga_id}`\n📚 {title} - {os.path.basename(f)}"
+                        msg = await client.send_document(target_upload_chat, f, caption=img_cap)
                         
-                        msg = None
-                        if doc_mode: msg = await client.send_document(target_upload_chat, f, caption=img_cap)
-                        else: msg = await client.send_photo(target_upload_chat, f, caption=img_cap)
+                        if msg and msg.document:
+                             target_cache_ids.append(msg.document.file_id)
                         
-                        if msg:
-                             if msg.document: sent_file_ids.append(msg.document.file_id)
-                             elif msg.photo: sent_file_ids.append(msg.photo.file_id)
-                        
-                        # Pausa anti-flood
-                        await asyncio.sleep(0.5) 
-                        
+                        await asyncio.sleep(0.5) # Flood protection
                     except FloodWait as e:
-                        print(f"⏳ FloodWait: {e.value}s")
                         await asyncio.sleep(e.value + 1)
                     except Exception as e:
-                        print(f"Error {f}: {e}")
-            else:
-                 # Group logic (Solo para usuario final directo sin cacheo estricto)
-                 # Reverting to original IMG block just for context, but applying ZIP/PDF proxy below.
-                 if doc_mode:
-                    for i in range(0, len(all_files), 10):
-                        chunk = all_files[i:i+10]
-                        media = [InputMediaDocument(f) for f in chunk]
-                        try:
-                             msgs = await client.send_media_group(target_upload_chat, media)
-                             if msgs:
-                                for m in msgs:
-                                    if m.document: sent_file_ids.append(m.document.file_id)
-                             await asyncio.sleep(1.5)
-                        except FloodWait as e: await asyncio.sleep(e.value + 1)
-                        except: pass
-                 else:
-                    for i in range(0, len(all_files), 10):
-                        chunk = all_files[i:i+10]
-                        media = [InputMediaPhoto(f) for f in chunk]
-                        try: 
-                            msgs = await client.send_media_group(target_upload_chat, media)
-                            if msgs:
-                                for m in msgs:
-                                    if m.photo: sent_file_ids.append(m.photo.file_id)
-                            await asyncio.sleep(1.5)
-                        except FloodWait as e: await asyncio.sleep(e.value + 1)
-                        except: pass
+                        print(f"Error upload dump {f}: {e}")
 
-            # --- SAVE IMG CACHE ---
-            if sent_file_ids:
-                manga_cache[cache_key] = sent_file_ids
-                save_manga_cache()
+                 # --- SAVE HQ CACHE ---
+                 # Guardamos estos IDs bajo la key de 'img|original|True' (Doc Mode)
+                 if target_cache_ids:
+                     cache_key_hq = f"{manga_id}|img|original|True"
+                     manga_cache[cache_key_hq] = target_cache_ids
+                     save_manga_cache()
             
-            # --- DELIVERY PHASE (Si hicimos Proxy) ---
-            # Si is_sync=True, YA TERMINAMOS (Solo queríamos subir al dump).
-            # Si is_sync=False y is_proxyING=True (Usuario pidió, subimos a Dump), ahora reenviamos al usuario.
-            
-            if is_proxyING and not is_sync and sent_file_ids:
-                # Reenviar al Usuario (chat_id original)
-                await status_msg.edit("📤 **Reenviando al chat...**")
+            # --- FASE 2: ENTREGA AL USUARIO (si no es Sync) ---
+            if not is_sync:
+                await status_msg.edit("📤 **Enviando a tu chat...**")
                 
-                # Optimización: Reenviar IDs? O usar send_photo con file_id?
-                # Usar send_photo con file_id es más limpio.
+                # Aquí respetamos lo que el usuario pidió (doc_mode, group_mode)
+                # Opciones:
+                # A) Si el usuario pidió Docs y acabamos de subirlos al Dump -> Reenviar los IDs (Rápido)
+                # B) Si el usuario pidió Fotos -> Usar los archivos locales (porque reenviar Docs como fotos es tricky)
                 
-                # Usar group_mode original del user request
-                if group_mode:
-                     # Reenviar como album
-                     chunk_size = 10
-                     for i in range(0, len(sent_file_ids), chunk_size):
-                         chunk = sent_file_ids[i:i+chunk_size]
-                         media = []
-                         for fid in chunk:
-                             if doc_mode: media.append(InputMediaDocument(fid))
-                             else: media.append(InputMediaPhoto(fid))
-                         try:
-                             await client.send_media_group(chat_id, media)
-                             await asyncio.sleep(1)
-                         except: pass
+                delivery_ids_from_cache = None
+                
+                # Intentar usar el cache si coincide el modo
+                if doc_mode and target_cache_ids: 
+                    delivery_ids_from_cache = target_cache_ids
+                
+                if delivery_ids_from_cache:
+                    # REENVÍO RÁPIDO (Cache Hit inmediato)
+                    # Nota: group_mode con IDs es posible? Sí, InputMediaDocument(media=file_id)
+                     if group_mode:
+                         # Album
+                         for i in range(0, len(delivery_ids_from_cache), 10):
+                             chunk = delivery_ids_from_cache[i:i+10]
+                             media = [InputMediaDocument(fid) for fid in chunk]
+                             try:
+                                 await client.send_media_group(chat_id, media)
+                                 await asyncio.sleep(1)
+                             except: pass
+                     else:
+                         # 1 a 1
+                         for fid in delivery_ids_from_cache:
+                             try:
+                                 await client.send_document(chat_id, fid)
+                                 await asyncio.sleep(0.3)
+                             except: pass
                 else:
-                    # Reenviar 1 a 1
-                    for fid in sent_file_ids:
-                        try:
-                            if doc_mode: await client.send_document(chat_id, fid)
-                            else: await client.send_photo(chat_id, fid)
-                            await asyncio.sleep(0.3)
-                        except: pass
+                    # ENVÍO MANUAL (Desde Disco Local)
+                    # Caso: Usuario pidió Fotos (y solo tenemos Docs en cache) o primera vez sin proxy
+                    
+                    if group_mode:
+                        # Album Fotos/Docs
+                         for i in range(0, len(all_files), 10):
+                            chunk = all_files[i:i+10]
+                            media = []
+                            for f in chunk:
+                                if doc_mode: media.append(InputMediaDocument(f))
+                                else: media.append(InputMediaPhoto(f))
+                            
+                            try:
+                                 await client.send_media_group(chat_id, media)
+                                 await asyncio.sleep(1.2)
+                            except FloodWait as e: await asyncio.sleep(e.value + 1)
+                            except: pass
+                    else:
+                        # 1 a 1 Fotos/Docs
+                        for f in all_files:
+                            try:
+                                if doc_mode: await client.send_document(chat_id, f)
+                                else: await client.send_photo(chat_id, f)
+                                await asyncio.sleep(0.3)
+                            except FloodWait as e: await asyncio.sleep(e.value + 1)
+                            except: pass
 
             await status_msg.delete()
             return
