@@ -578,6 +578,24 @@ async def analyze(c, m):
                f"Elige el tipo de archivo:")
                
         valid_cover = meta.get('cover') and meta['cover'].startswith("http")
+        
+        # --- SMART COVER FALLBACK ---
+        # Si no hay portada explícita, usar la primera página del Cap 1
+        if not valid_cover:
+             try:
+                 chapters = await get_manga_chapters(manga_id)
+                 if chapters:
+                     # Priorizar WebP para preview (más ligero) o Original
+                     first_ch = chapters[0]
+                     if first_ch.get('webp'):
+                         meta['cover'] = first_ch['webp'][0]
+                     elif first_ch.get('original'):
+                         meta['cover'] = first_ch['original'][0]
+                     
+                     valid_cover = meta.get('cover') and meta['cover'].startswith("http")
+             except: pass
+        # ----------------------------
+
         if valid_cover:
             await c.send_photo(cid, meta['cover'], caption=txt, reply_markup=kb)
         else:
