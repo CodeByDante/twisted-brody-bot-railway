@@ -425,6 +425,32 @@ async def sync_master_cmd(c, m):
     status = await m.reply("🔄 **Iniciando Sincronización...**\n(Comparando Firebase vs Cache local)", quote=True)
     await sync_mangas_incremental(c, status)
 
+# --- EXPLICIT SETUP COMMAND ---
+@app.on_message(filters.regex(r"(?i)^/twisted$"))
+async def explicit_setup_cmd(c, m):
+    from database import global_config
+    
+    dump_id = global_config.get('dump_channel_id')
+    
+    if not dump_id:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Conectar Canal Privado", callback_data="setup_dump")]
+        ])
+        await m.reply(
+            "⚠️ **Configuración Necesaria**\n\n"
+            "Para usar el Sistema de Mangas, primero debes conectar un **Canal Privado** que servirá como base de datos infinita.\n\n"
+            "Toca el botón abajo para empezar 👇",
+            reply_markup=kb,
+            quote=True
+        )
+    else:
+        await m.reply(
+            f"✅ **Sistema Configurado**\n\n"
+            f"Canal de Base de Datos: `{dump_id}`\n\n"
+            "Usa `/twisted brody manga flow` para sincronizar.",
+            quote=True
+        )
+
 # --- SETUP FORWARD LISTENER ---
 @app.on_message(filters.forwarded)
 async def setup_forward_listener(c, m):
