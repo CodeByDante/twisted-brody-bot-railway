@@ -55,6 +55,44 @@ async def get_mediafire_link(url):
         print(f"Error scraping Mediafire: {e}")
     return None
 
+async def get_yourupload_link(url):
+    """
+    Extracts the direct video link from a YourUpload URL.
+    YourUpload is known for simple protection or direct embed.
+    """
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Referer": url
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, allow_redirects=True) as resp:
+                if resp.status != 200: return None
+                text = await resp.text()
+                
+                # 1. Check og:video (Easiest)
+                match_og = re.search(r'property="og:video"\s+content="([^"]+)"', text)
+                if match_og: return match_og.group(1)
+                
+                # 2. Check jwplayer setup
+                match_jw = re.search(r"file\s*:\s*['\"]([^'\"]+)['\"]", text)
+                if match_jw:
+                    link = match_jw.group(1)
+                    if link.startswith("/"): return "https://www.yourupload.com" + link
+                    return link
+                
+                # 3. Direct source tag
+                match_src = re.search(r'<source\s+src="([^"]+)"', text)
+                if match_src:
+                    link = match_src.group(1)
+                    if link.startswith("/"): return "https://www.yourupload.com" + link
+                    return link
+
+    except Exception as e:
+        print(f"Error scraping YourUpload: {e}")
+    return None
+
 async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     conf = get_config(chat_id)
     vid_id = datos.get('id')
@@ -151,6 +189,7 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
         engine_name = "Nativo (Estándar)"
         is_direct_download = False
         mediafire_link = None
+        yourupload_link = None
         
         # 1. Mediafire Check
         if "mediafire.com" in url_descarga:
@@ -162,11 +201,22 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                 is_direct_download = True
                 mediafire_link = True
             else:
-                # Si falla scraper, dejamos que yt-dlp intente (aunque probablemente falle)
-                pass
+                pass 
 
-        # 2. Turbo Check
-        usar_turbo = HAS_RE and ".m3u8" in url_descarga and calidad != "mp3" and not mediafire_link
+        # 2. YourUpload Check
+        elif "yourupload.com" in url_descarga:
+             await status.edit(f"⏳ **YourUpload Check...**\n🔍 Buscando video directo...")
+             yu_link = await get_yourupload_link(url_descarga)
+             if yu_link:
+                 url_descarga = yu_link
+                 engine_name = "YourUpload (Directo)"
+                 is_direct_download = True
+                 yourupload_link = True
+             else:
+                 pass
+
+        # 3. Turbo Check
+        usar_turbo = HAS_RE and ".m3u8" in url_descarga and calidad != "mp3" and not mediafire_link and not yourupload_link
 
         if usar_turbo: 
             engine_name = "Turbo (N_m3u8DL-RE)"
@@ -252,6 +302,9 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                  "--allow-overwrite=true",
                  "--auto-file-renaming=false"
              ]
+             
+             if yourupload_link:
+                 cmd.extend(["--header", f"Referer: {url}"])
              
              if cookie_file:
                  cmd.extend(["--load-cookies", cookie_file])
@@ -389,7 +442,13 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                         final = new_final
                         ext = new_ext
                 
-                if ext.lower() in vid_exts: is_video = True
+                # YOURUPLOAD FIX: Forzar .mp4 si viene de yourupload y no tiene ext
+                if yourupload_link and not ext:
+                    new_final = final + ".mp4"
+                    os.rename(final, new_final)
+                    final = new_final
+                    is_video = True
+                elif ext.lower() in vid_exts: is_video = True
                 else: is_video = False
 
         # Forzar is_video si yt-dlp fue usado exitosamente (generalmente descarga videos), salvo mp3
