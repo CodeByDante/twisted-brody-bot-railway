@@ -12,6 +12,7 @@ from config import LIMIT_2GB, HAS_FAST, DOWNLOAD_DIR, TOOLS_DIR, FAST_PATH
 from database import get_config, downloads_db, guardar_db, add_active, remove_active
 from utils import sel_cookie, traducir_texto
 from tools_media import get_thumb, get_meta, get_audio_dur, progreso
+from firebase_service import get_cached_file, save_cached_file
 
 # Límite real de Telegram para dividir (1.9 GB para ir seguros)
 TG_LIMIT = int(1.9 * 1024 * 1024 * 1024)
@@ -119,28 +120,29 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     else:
         ckey = "mp3" if calidad == "mp3" else calidad
 
-    # --- ZONA DE CACHE (NO RE-DESCARGAR) ---
-    if vid_id and vid_id in downloads_db and ckey in downloads_db[vid_id]:
+    # --- ZONA DE CACHE (FIREBASE) ---
+    cached_fid = None
+    if vid_id:
+        cached_fid = await get_cached_file(vid_id, ckey)
+
+    if cached_fid:
         try:
-            print(f"✨ Cache Hit: {vid_id} [{ckey}]")
-            file_id = downloads_db[vid_id][ckey]
+            print(f"✨ Firebase Cache Hit: {vid_id} [{ckey}]")
+            file_id = cached_fid
             
             res_str = f"{calidad}p" if calidad.isdigit() else calidad.upper()
             cap_cache = f"🎬 **{datos.get('titulo','Video')}**\n⚙️ {res_str} | ✨ (Reenviado al instante)"
             
-            # Intentar determinar tipo por ckey o intentar send_video primero, si falla send_document
-            # Simplificación: Asumir Video si no es mp3, si falla probar documento.
             if calidad == "mp3": 
                 await client.send_audio(chat_id, file_id, caption=cap_cache)
             else:
                 try:
                     await client.send_video(chat_id, file_id, caption=cap_cache)
                 except:
-                    # Si falla (ej. era un ZIP guardado como video), probar documento
                     await client.send_document(chat_id, file_id, caption=cap_cache)
             return
         except Exception as e:
-            print(f"⚠️ Cache inválido (Archivo borrado?): {e}")
+            print(f"⚠️ Cache inválido o borrado: {e}")
 
     # Register Task for Anti-Spam / Cancellation
     curr_task = asyncio.current_task()
@@ -545,17 +547,15 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
                 print(f"❌ Error subiendo parte {i+1}: {e}")
                 await client.send_message(chat_id, f"❌ Error al subir parte {i+1}: {e}")
 
-            # Guardar en DB solo si es video o audio estándar, para evitar cachear temporales raros
-            # O si es documento válido y tiene ID.
+            # Guardar en Firebase (y DB local si se quiere, por ahora solo Firebase)
             if res and vid_id and not calidad.startswith("html_") and not is_split and "m3u8" not in url:
-                if vid_id not in downloads_db: downloads_db[vid_id] = {}
                 fid = None
                 if res.audio: fid = res.audio.file_id
                 elif res.video: fid = res.video.file_id
                 elif res.document: fid = res.document.file_id
                 
-                if fid: downloads_db[vid_id][ckey] = fid
-                guardar_db()
+                if fid:
+                    await save_cached_file(vid_id, ckey, fid, meta=datos)
             
             if is_split:
                 try: os.remove(f_path)
