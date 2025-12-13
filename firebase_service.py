@@ -68,6 +68,18 @@ async def get_cached_file(video_id, quality):
         print(f"⚠️ [Firebase] Error leyendo cache: {e}")
         return None
 
+async def get_cached_data(video_id):
+    """
+    Retorna el documento completo del cache (incluyendo meta y todos los formatos).
+    """
+    if not db: return None
+    try:
+        doc = db.collection('media_cache').document(str(video_id)).get()
+        if doc.exists: return doc.to_dict()
+    except Exception as e:
+        print(f"⚠️ [Firebase] Error leyendo data cache: {e}")
+    return None
+
 async def save_cached_file(video_id, quality, file_id, meta=None):
     """
     Guarda o actualiza el file_id para una calidad dada.
