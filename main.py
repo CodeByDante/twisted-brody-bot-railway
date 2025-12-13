@@ -18,6 +18,8 @@ from jav_extractor import extraer_jav_directo
 # from sniffer import detectar_video_real # Eliminado 
 from downloader import procesar_descarga
 from manga_service import get_manga_metadata, process_manga_download, get_manga_chapters
+# Firebase Imports
+from firebase_service import get_cached_file, save_cached_file
 
 print("🚀 Iniciando Bot Pro (JAV Turbo + FB Fix + Auto-Swap)...")
 
@@ -724,20 +726,36 @@ async def analyze(c, m):
              except: pass
 
         if valid_cover:
-            # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(meta['cover']) as resp:
-                        if resp.status == 200:
-                            photo_bytes = BytesIO(await resp.read())
-                            photo_bytes.name = "cover.jpg" # Ayuda a Pyrogram a detectar formato
-                            await c.send_photo(cid, photo_bytes, caption=txt, reply_markup=kb)
-                        else:
-                            # Fallback si falla descarga (403/404)
-                             await c.send_message(cid, txt, reply_markup=kb)
-            except Exception as e:
-                print(f"⚠️ Error enviando cover {meta['cover']}: {e}")
-                await c.send_message(cid, txt, reply_markup=kb)
+            # 0. CHECK CACHE FOR COVER
+            cover_fid = await get_cached_file(f"manga_{manga_id}", "cover_id")
+            sent_msg = None
+            
+            if cover_fid:
+                try:
+                    sent_msg = await c.send_photo(cid, cover_fid, caption=txt, reply_markup=kb)
+                except Exception as e:
+                    print(f"⚠️ Cache cover failed: {e}")
+                    cover_fid = None # Retry with download
+
+            if not cover_fid:
+                # FIX: Descargar imagen localmente para evitar WebpageMediaEmpty o errores de URL de Telegram
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(meta['cover']) as resp:
+                            if resp.status == 200:
+                                photo_bytes = BytesIO(await resp.read())
+                                photo_bytes.name = "cover.jpg" # Ayuda a Pyrogram a detectar formato
+                                sent_msg = await c.send_photo(cid, photo_bytes, caption=txt, reply_markup=kb)
+                                
+                                # SAVE CACHE
+                                if sent_msg and sent_msg.photo:
+                                    await save_cached_file(f"manga_{manga_id}", "cover_id", sent_msg.photo.file_id)
+                            else:
+                                # Fallback si falla descarga (403/404)
+                                 await c.send_message(cid, txt, reply_markup=kb)
+                except Exception as e:
+                    print(f"⚠️ Error enviando cover {meta['cover']}: {e}")
+                    await c.send_message(cid, txt, reply_markup=kb)
         else:
             await c.send_message(cid, txt, reply_markup=kb)
         return
