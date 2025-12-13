@@ -139,6 +139,9 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
             
             if calidad == "mp3": 
                 await client.send_audio(chat_id, file_id, caption=cap_cache)
+            elif conf.get('doc_mode'):
+                # FIX: Si el usuario quiere documento, ENVIAR DOCUMENTO
+                await client.send_document(chat_id, file_id, caption=cap_cache)
             else:
                 try:
                     await client.send_video(chat_id, file_id, caption=cap_cache)
