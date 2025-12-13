@@ -340,16 +340,27 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                         if doc_mode: media.append(InputMediaDocument(f))
                         else: media.append(InputMediaPhoto(f))
                     
-                    try:
+                     try:
                          # Capturar resultado
                          sent_msgs = await client.send_media_group(chat_id, media)
-                         for m in sent_msgs:
-                             if m.photo: sent_file_ids.append(m.photo.file_id)
-                             elif m.document: sent_file_ids.append(m.document.file_id)
+                         if sent_msgs:
+                             for m in sent_msgs:
+                                 if m.photo: sent_file_ids.append(m.photo.file_id)
+                                 elif m.document: sent_file_ids.append(m.document.file_id)
                              
-                         await asyncio.sleep(1.2)
-                    except FloodWait as e: await asyncio.sleep(e.value + 1)
-                    except: pass
+                         await asyncio.sleep(2) # Increased delay to prevent flood
+                    except FloodWait as e:
+                        await asyncio.sleep(e.value + 2)
+                        # Retry once
+                        try:
+                            sent_msgs = await client.send_media_group(chat_id, media)
+                            if sent_msgs:
+                                for m in sent_msgs:
+                                    if m.photo: sent_file_ids.append(m.photo.file_id)
+                                    elif m.document: sent_file_ids.append(m.document.file_id)
+                        except: pass
+                    except Exception as e:
+                        print(f"Error sending chunk {i}: {e}")
             else:
                 # 1 a 1 Fotos/Docs
                 for f in all_files:
@@ -410,11 +421,16 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             
             cap = f"📚 **{title}**\n👤 {manga_data['author']}\n🆔 `{manga_id}`\n📦 {container.upper()} | 🎨 {quality.upper()}"
             
-            msg = await client.send_document(chat_id, final_file, caption=cap)
+            try:
+                msg = await client.send_document(chat_id, final_file, caption=cap, progress=progreso, progress_args=(status_msg, [time.time(),0], "Subiendo..."))
+                
+                # SAVE CACHE (Single File ID)
+                if msg and msg.document:
+                     await save_cached_file(f"manga_{manga_id}", cache_key, msg.document.file_id, meta={'title': title})
             
-            # SAVE CACHE (Single File ID)
-            if msg and msg.document:
-                 await save_cached_file(f"manga_{manga_id}", cache_key, msg.document.file_id, meta={'title': title})
+            except Exception as e:
+                print(f"Error sending doc: {e}")
+                await status_msg.edit(f"❌ Error al subir: {e}")
             
             try: os.remove(final_file)
             except: pass
