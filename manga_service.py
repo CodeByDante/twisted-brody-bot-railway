@@ -333,22 +333,22 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             
             if group_mode:
                 # Album Fotos/Docs
-                 for i in range(0, len(all_files), 10):
+                for i in range(0, len(all_files), 10):
                     chunk = all_files[i:i+10]
                     media = []
                     for f in chunk:
                         if doc_mode: media.append(InputMediaDocument(f))
                         else: media.append(InputMediaPhoto(f))
                     
-                     try:
-                         # Capturar resultado
-                         sent_msgs = await client.send_media_group(chat_id, media)
-                         if sent_msgs:
-                             for m in sent_msgs:
-                                 if m.photo: sent_file_ids.append(m.photo.file_id)
-                                 elif m.document: sent_file_ids.append(m.document.file_id)
-                             
-                         await asyncio.sleep(2) # Increased delay to prevent flood
+                    try:
+                        # Capturar resultado
+                        sent_msgs = await client.send_media_group(chat_id, media)
+                        if sent_msgs:
+                            for m in sent_msgs:
+                                if m.photo: sent_file_ids.append(m.photo.file_id)
+                                elif m.document: sent_file_ids.append(m.document.file_id)
+                            
+                        await asyncio.sleep(2) # Increased delay to prevent flood
                     except FloodWait as e:
                         await asyncio.sleep(e.value + 2)
                         # Retry once
