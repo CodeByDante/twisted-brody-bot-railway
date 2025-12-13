@@ -9,6 +9,7 @@ from PIL import Image
 from io import BytesIO
 from config import DATA_DIR
 from pyrogram.types import InputMediaPhoto, InputMediaDocument
+from firebase_service import get_cached_file, save_cached_file
 
 FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/twistedbrody-9d163/databases/(default)/documents"
 
@@ -185,6 +186,47 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
     os.makedirs(base_tmp, exist_ok=True)
     
     try:
+        # 0. KEY GENERATION & CACHE CHECK
+        # Key format: manga_{id} // Field: {container}_{quality} (e.g. zip_original, img_webp)
+        cache_key = f"{container}_{quality}"
+        cached_data = await get_cached_file(f"manga_{manga_id}", cache_key)
+        
+        if cached_data:
+            await status_msg.edit(f"✨ **{title}**\n⚡ Enviando desde memoria (instantáneo)...")
+            try:
+                if isinstance(cached_data, list):
+                    # ALBUM CACHE (Images)
+                    if group_mode:
+                        for i in range(0, len(cached_data), 10):
+                            chunk = cached_data[i:i+10]
+                            media = []
+                            for fid in chunk:
+                                if doc_mode: media.append(InputMediaDocument(fid))
+                                else: media.append(InputMediaPhoto(fid))
+                            try:
+                                await client.send_media_group(chat_id, media)
+                                await asyncio.sleep(1)
+                            except FloodWait as fw: await asyncio.sleep(fw.value + 1)
+                            except: pass
+                    else:
+                        for fid in cached_data:
+                            try:
+                                if doc_mode: await client.send_document(chat_id, fid)
+                                else: await client.send_photo(chat_id, fid)
+                                await asyncio.sleep(0.3)
+                            except FloodWait as fw: await asyncio.sleep(fw.value + 1)
+                            except: pass
+                else:
+                    # SINGLE FILE CACHE (ZIP/PDF)
+                    cap = f"🎬 **{title}**\n👤 {manga_data.get('author','?')}\n✨ (Desde Memoria)"
+                    await client.send_document(chat_id, cached_data, caption=cap)
+                
+                await status_msg.delete()
+                return # EXIT SUCCESS
+            except Exception as e:
+                print(f"⚠️ Cache read failed: {e}")
+                # Fallback to download if cache fail (e.g. invalid IDs)
+
         # 1. Obtener links
         await status_msg.edit(f"⏳ **{title}**\n🔍 Obteniendo lista de capítulos...")
         chapters = await get_manga_chapters(manga_id)
@@ -286,7 +328,9 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             if not all_files:
                 return await status_msg.edit("❌ Error: No se descargaron imágenes.")
             
-            # ENVIAR AL USUARIO
+            # --- ENVIAR AL USUARIO Y CAPTURAR FILE IDs ---
+            sent_file_ids = []
+            
             if group_mode:
                 # Album Fotos/Docs
                  for i in range(0, len(all_files), 10):
@@ -297,7 +341,12 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                         else: media.append(InputMediaPhoto(f))
                     
                     try:
-                         await client.send_media_group(chat_id, media)
+                         # Capturar resultado
+                         sent_msgs = await client.send_media_group(chat_id, media)
+                         for m in sent_msgs:
+                             if m.photo: sent_file_ids.append(m.photo.file_id)
+                             elif m.document: sent_file_ids.append(m.document.file_id)
+                             
                          await asyncio.sleep(1.2)
                     except FloodWait as e: await asyncio.sleep(e.value + 1)
                     except: pass
@@ -305,11 +354,21 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                 # 1 a 1 Fotos/Docs
                 for f in all_files:
                     try:
-                        if doc_mode: await client.send_document(chat_id, f)
-                        else: await client.send_photo(chat_id, f)
+                        m = None
+                        if doc_mode: m = await client.send_document(chat_id, f)
+                        else: m = await client.send_photo(chat_id, f)
+                        
+                        if m:
+                             if m.photo: sent_file_ids.append(m.photo.file_id)
+                             elif m.document: sent_file_ids.append(m.document.file_id)
+                             
                         await asyncio.sleep(0.3)
                     except FloodWait as e: await asyncio.sleep(e.value + 1)
                     except: pass
+
+            # SAVE TO CACHE (List of IDs)
+            if sent_file_ids:
+                await save_cached_file(f"manga_{manga_id}", cache_key, sent_file_ids, meta={'title': title})
 
             await status_msg.delete()
             return
@@ -351,7 +410,11 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
             
             cap = f"📚 **{title}**\n👤 {manga_data['author']}\n🆔 `{manga_id}`\n📦 {container.upper()} | 🎨 {quality.upper()}"
             
-            await client.send_document(chat_id, final_file, caption=cap)
+            msg = await client.send_document(chat_id, final_file, caption=cap)
+            
+            # SAVE CACHE (Single File ID)
+            if msg and msg.document:
+                 await save_cached_file(f"manga_{manga_id}", cache_key, msg.document.file_id, meta={'title': title})
             
             try: os.remove(final_file)
             except: pass
