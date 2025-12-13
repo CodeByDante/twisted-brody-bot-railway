@@ -193,14 +193,46 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         
         cached_data = await get_cached_file(f"manga_{manga_id}", cache_key)
         
+        # SMART CACHE VALIDATION (Solo para álbumes de imágenes)
+        valid_cache = False
         if cached_data:
+             if isinstance(cached_data, list):
+                 # Es un álbum, verificar conteo
+                 try:
+                     # Necesitamos saber cuántas imágenes SON en realidad
+                     # Pequeño overhead de red, pero asegura integridad
+                     chapters = await get_manga_chapters(manga_id)
+                     if chapters:
+                         total_expected = 0
+                         use_source = 'webp' if quality == 'webp' else 'original'
+                         for ch in chapters:
+                             src_list = ch[use_source]
+                             if not src_list and use_source == 'original': src_list = ch['webp']
+                             total_expected += len(src_list)
+                         
+                         if len(cached_data) == total_expected:
+                             valid_cache = True
+                             cached_data_to_use = cached_data
+                         else:
+                             print(f"⚠️ Cache Mismatch: Guardados {len(cached_data)} vs Reales {total_expected}. Invalidando.")
+                             valid_cache = False
+                             # Podríamos borrarlo de firebase aquí, pero al guardar el nuevo se sobreescribe.
+                 except: 
+                     # Si falla la verificación, asumimos inválido por seguridad
+                     valid_cache = False
+             else:
+                 # ZIP/PDF (Single file_id), asumimos válido si existe
+                 valid_cache = True
+                 cached_data_to_use = cached_data
+
+        if valid_cache:
             await status_msg.edit(f"✨ **{title}**\n⚡ Enviando desde memoria (instantáneo)...")
             try:
-                if isinstance(cached_data, list):
+                if isinstance(cached_data_to_use, list):
                     # ALBUM CACHE (Images)
                     if group_mode:
-                        for i in range(0, len(cached_data), 10):
-                            chunk = cached_data[i:i+10]
+                        for i in range(0, len(cached_data_to_use), 10):
+                            chunk = cached_data_to_use[i:i+10]
                             media = []
                             for fid in chunk:
                                 if doc_mode: media.append(InputMediaDocument(fid))
@@ -211,7 +243,7 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                             except FloodWait as fw: await asyncio.sleep(fw.value + 1)
                             except: pass
                     else:
-                        for fid in cached_data:
+                        for fid in cached_data_to_use:
                             try:
                                 if doc_mode: await client.send_document(chat_id, fid)
                                 else: await client.send_photo(chat_id, fid)
@@ -221,17 +253,21 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
                 else:
                     # SINGLE FILE CACHE (ZIP/PDF)
                     cap = f"🎬 **{title}**\n👤 {manga_data.get('author','?')}\n✨ (Desde Memoria)"
-                    await client.send_document(chat_id, cached_data, caption=cap)
+                    await client.send_document(chat_id, cached_data_to_use, caption=cap)
                 
                 await status_msg.delete()
                 return # EXIT SUCCESS
             except Exception as e:
                 print(f"⚠️ Cache read failed: {e}")
-                # Fallback to download if cache fail (e.g. invalid IDs)
+                # Fallback to download
 
-        # 1. Obtener links
-        await status_msg.edit(f"⏳ **{title}**\n🔍 Obteniendo lista de capítulos...")
-        chapters = await get_manga_chapters(manga_id)
+        # 1. Obtener links (Si no hubo cache válido)
+        if not valid_cache: # Solo editar si no acabamos de fallar cache silenciosamente
+             await status_msg.edit(f"⏳ **{title}**\n🔍 Obteniendo lista de capítulos...")
+        
+        # Si ya bajamos chapters para validar, usarlos
+        if 'chapters' not in locals() or not chapters:
+            chapters = await get_manga_chapters(manga_id)
         
         if not chapters:
             await status_msg.edit("❌ No se encontraron capítulos o imágenes.")
