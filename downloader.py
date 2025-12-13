@@ -120,6 +120,10 @@ async def procesar_descarga(client, chat_id, url, calidad, datos, msg_orig):
     else:
         ckey = "mp3" if calidad == "mp3" else calidad
 
+    # FIX: Diferenciar cache si es modo documento
+    if conf.get('doc_mode') and calidad != "mp3":
+        ckey += "_doc"
+
     # --- ZONA DE CACHE (FIREBASE) ---
     cached_fid = None
     if vid_id:
