@@ -189,6 +189,8 @@ async def process_manga_download(client, chat_id, manga_data, container, quality
         # 0. KEY GENERATION & CACHE CHECK
         # Key format: manga_{id} // Field: {container}_{quality} (e.g. zip_original, img_webp)
         cache_key = f"{container}_{quality}"
+        if doc_mode: cache_key += "_doc"
+        
         cached_data = await get_cached_file(f"manga_{manga_id}", cache_key)
         
         if cached_data:
