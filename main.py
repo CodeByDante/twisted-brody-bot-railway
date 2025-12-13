@@ -1091,10 +1091,25 @@ if __name__ == "__main__":
     from pyrogram import idle
     from pyrogram.types import BotCommand
 
+    from pyrogram.errors import FloodWait
+
     async def start_bot():
         global BOT_USERNAME
         print("🚀 Iniciando Twisted Brody Bot Pro...")
-        await app.start()
+        
+        # FIX: Retry loop para FloodWait en Startup
+        while True:
+            try:
+                await app.start()
+                break # Conexión exitosa
+            except FloodWait as e:
+                print(f"⌛ [FloodWait] Telegram pide esperar {e.value} segundos antes de conectar...")
+                await asyncio.sleep(e.value + 5) # Esperar tiempo + buffer
+                print(f"🔄 Reintentando conexión...")
+            except Exception as e:
+                print(f"❌ Error crítico al iniciar app: {e}")
+                return # Salir si es otro error
+
         
         # Obtener username del bot para deep links
         try:
